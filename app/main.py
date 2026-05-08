@@ -1,9 +1,9 @@
 """
 main.py — BDR Pipeline Streamlit dashboard (white-label).
 
-A single-tenant-at-a-time UI. The active tenant is selected from the sidebar
-or pinned via the BDR_TENANT environment variable. All copy, branding, and
-positioning come from the loaded TenantConfig — no hardcoded brand strings.
+Thin orchestrator: hydrates env, resolves the active tenant, injects the Chalk
+theme, then delegates rendering to app.ui. The active tenant is selected from
+the sidebar dropdown or pinned via the BDR_TENANT environment variable.
 
 Run:
     streamlit run app/main.py
@@ -17,7 +17,6 @@ import os
 import sys
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 # Ensure the repo root is importable when Streamlit launches this file directly.
@@ -39,7 +38,6 @@ try:
 except Exception:
     pass
 
-# Load .env from repo root if present
 try:
     from dotenv import load_dotenv  # type: ignore
     load_dotenv(ROOT / ".env")
@@ -47,16 +45,16 @@ except ImportError:
     pass
 
 from app.tenants import list_tenants, load_tenant  # noqa: E402
+from app.ui import inject_css, render_sidebar, render_main, render_empty  # noqa: E402
+from app.ui.layout import render_running  # noqa: E402
+from app.ui.components import STAGE_LABELS  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Tenant selection — env var pin OR sidebar dropdown
+# Tenant resolution (must precede st.set_page_config)
 # ---------------------------------------------------------------------------
 _AVAILABLE = list_tenants()
 if not _AVAILABLE:
-    st.error(
-        "No tenants found. Create one under `tenants/<slug>/` "
-        "(see `tenants/README.md` for the file layout)."
-    )
+    st.error("No tenants found. Create one under `tenants/<slug>/` (see `tenants/README.md`).")
     st.stop()
 
 _PIN = os.environ.get("BDR_TENANT", "").strip()
@@ -65,11 +63,6 @@ if _PIN and _PIN not in _AVAILABLE:
     _PIN = ""
 
 _DEFAULT = _PIN or st.session_state.get("active_tenant") or _AVAILABLE[0]
-
-
-# ---------------------------------------------------------------------------
-# Page config — must come BEFORE any other st.* calls in main script flow
-# ---------------------------------------------------------------------------
 _default_tenant = load_tenant(_DEFAULT)
 
 st.set_page_config(
@@ -79,6 +72,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ---------------------------------------------------------------------------
+# Theme — accent driven by tenant.brand.primary_color
+# ---------------------------------------------------------------------------
+inject_css(primary_color=_default_tenant.brand.primary_color)
+
 
 @st.cache_resource(show_spinner=False)
 def _build_workflow_for(tenant_id: str):  # noqa: ARG001  (cached per tenant)
@@ -87,104 +85,26 @@ def _build_workflow_for(tenant_id: str):  # noqa: ARG001  (cached per tenant)
 
 
 # ---------------------------------------------------------------------------
-# Sidebar — tenant switcher + run inputs
+# Sidebar — collect inputs
 # ---------------------------------------------------------------------------
-with st.sidebar:
-    st.markdown(f"### {_default_tenant.brand.icon} BDR Pipeline")
-    st.caption("White-label outreach engine")
+inputs = render_sidebar(
+    tenant=_default_tenant,
+    available_tenants=_AVAILABLE,
+    pin_locked=bool(_PIN),
+)
 
-    pin_locked = bool(_PIN)
-    selection = st.selectbox(
-        "Tenant",
-        options=_AVAILABLE,
-        index=_AVAILABLE.index(_DEFAULT),
-        disabled=pin_locked,
-        help="Pinned via BDR_TENANT env var." if pin_locked else "Switch positioning / ICP / copy.",
-    )
+# Tenant switch — rerun with new accent
+if inputs.selected_tenant != _DEFAULT:
+    st.session_state["active_tenant"] = inputs.selected_tenant
+    st.rerun()
 
-    if selection != st.session_state.get("active_tenant"):
-        st.session_state["active_tenant"] = selection
-        st.rerun()
-
-    tenant = load_tenant(selection)
-
-    st.markdown("---")
-    st.markdown(f"**{tenant.brand.name}**")
-    if tenant.brand.tagline:
-        st.caption(tenant.brand.tagline)
-    st.caption(f"Persona: {tenant.persona.title}")
-    st.caption(f"Sender: {tenant.sender.name}")
-
-    st.markdown("---")
-    st.markdown("**Run a prospect**")
-
-    company = st.text_input("Company name", placeholder="e.g. Globex Industries")
-    industry = st.text_input("Industry", placeholder="e.g. B2B SaaS")
-    trigger_headline = st.text_input(
-        "Trigger headline (optional)",
-        placeholder="Recent earnings miss, new CRO hire, etc.",
-        help="Pasted into the humanizer to anchor the observation in a real event.",
-    )
-
-    sync_to_notion = st.checkbox(
-        "Sync to Notion",
-        value=tenant.crm.enabled,
-        disabled=not tenant.crm.enabled,
-        help="Disabled — set crm.enabled: true in tenant config.yaml to enable.",
-    )
-
-    run_clicked = st.button("Run pipeline", type="primary", use_container_width=True)
-
-    st.markdown("---")
-    with st.expander("Tenant prospects", expanded=False):
-        if tenant.prospects_csv.exists():
-            try:
-                df = pd.read_csv(tenant.prospects_csv)
-                st.dataframe(df, hide_index=True, use_container_width=True)
-            except Exception as e:
-                st.caption(f"Could not read prospects.csv: {e}")
-        else:
-            st.caption("No prospects.csv found for this tenant.")
-
+tenant = _default_tenant
 
 # ---------------------------------------------------------------------------
-# Main area — header + workflow output
+# Routing — empty / running / complete
 # ---------------------------------------------------------------------------
-st.markdown(f"## {tenant.brand.icon} {tenant.brand.name} — BDR Pipeline")
-st.caption(tenant.business.description)
-
-if not run_clicked or not company:
-    st.info(
-        "Enter a company name in the sidebar and click **Run pipeline** to "
-        "generate enrichment, strategy, and a 5-touch outreach sequence "
-        f"positioned for {tenant.brand.name}."
-    )
-
-    with st.expander("How the pipeline works", expanded=False):
-        st.markdown(
-            "1. **Enrichment** — Exa pulls live news + job signals; Hunter.io "
-            "resolves domain + senior contacts; Claude Haiku synthesizes a "
-            f"research summary through the {tenant.persona.title} lens.\n"
-            "2. **Strategist** — Claude Sonnet picks one of three "
-            "tenant-configured angles via structured output.\n"
-            "3. **Humanizer** — Claude generates 3 specific observations + a "
-            "Before/After narrative; the deterministic assembler glues them "
-            "into emails using the tenant's fixed copy banks (no LLM \"voice\").\n"
-            "4. **Critic** — Claude scores every touch on 4 dimensions "
-            "(pain specificity, proof relevance, CTA clarity, human voice) and "
-            "rewrites the first paragraph of any email touch with a failing dim.\n"
-            "5. **CRM Sync** — Optional push to a Notion database."
-        )
-
-    with st.expander("Tenant angles", expanded=False):
-        for angle in tenant.angles:
-            st.markdown(f"**{angle.name}** ({angle.key}) — {angle.tab_label}")
-            st.caption(angle.description)
-            st.markdown(f"*Core insight:* {angle.core_insight}")
-            if angle.avoid:
-                st.markdown(f"*Avoid:* {angle.avoid}")
-            st.markdown("---")
-
+if not inputs.run_clicked or not inputs.company:
+    render_empty(tenant)
     st.stop()
 
 # ---------------------------------------------------------------------------
@@ -194,32 +114,45 @@ from app.agents.workflow_engine import run_workflow_stream  # noqa: E402
 
 workflow = _build_workflow_for(tenant.tenant_id)
 
-progress_box = st.empty()
-trace_box = st.empty()
+panel = st.empty()
 final_state: dict | None = None
 
-with progress_box.container():
-    st.info(f"Running pipeline for **{company}**…")
+# Map trace lines back to stage keys so the nav can light up the active stage.
+_STAGE_KEYS = [k for k, _ in STAGE_LABELS]
+done_stages: list[str] = []
+active_stage = _STAGE_KEYS[0]
 
-trace_lines: list[str] = []
 try:
     for latest, state in run_workflow_stream(
         workflow,
-        company=company,
-        industry=industry or "unknown",
+        company=inputs.company,
+        industry=inputs.industry or "unknown",
         tenant=tenant,
-        sync_to_notion=sync_to_notion,
-        trigger_headline=trigger_headline,
+        sync_to_notion=inputs.sync_to_notion,
+        trigger_headline=inputs.trigger_headline,
     ):
-        trace_lines = list(state.get("agent_trace", []))
-        with trace_box.container():
-            st.code("\n".join(trace_lines[-12:]) or latest, language="text")
+        # Infer stage progress from which slices the state has populated.
+        new_done: list[str] = []
+        if state.get("enrichment"):  new_done.append("enrichment")
+        if state.get("strategy"):    new_done.append("strategist")
+        if state.get("card"):        new_done.append("humanizer")
+        if state.get("critic_result") is not None: new_done.append("critic")
+        if state.get("crm_result") is not None:    new_done.append("crm_sync")
+        done_stages = new_done
+
+        next_stage = next((k for k in _STAGE_KEYS if k not in done_stages), "")
+        active_stage = next_stage or ""
+
+        with panel.container():
+            render_running(tenant, inputs.company, active_stage, tuple(done_stages))
+            st.info(f"Running pipeline for **{inputs.company}** — {active_stage or 'finishing up'}…")
+
         final_state = state
-except Exception as exc:  # surface workflow errors visibly rather than crashing the UI
+except Exception as exc:
     st.exception(exc)
     st.stop()
 
-progress_box.empty()
+panel.empty()
 
 if not final_state:
     st.error("Pipeline produced no state.")
@@ -227,102 +160,9 @@ if not final_state:
 
 if final_state.get("error"):
     st.error(f"Pipeline error: {final_state['error']}")
-    with st.expander("Trace"):
-        st.code("\n".join(trace_lines), language="text")
     st.stop()
 
 # ---------------------------------------------------------------------------
 # Render results
 # ---------------------------------------------------------------------------
-enrichment = final_state.get("enrichment")
-strategy = final_state.get("strategy")
-card = final_state.get("card")
-critic_result = final_state.get("critic_result")
-crm_result = final_state.get("crm_result")
-
-st.success(f"Pipeline complete for **{company}**.")
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    if enrichment and enrichment.icp:
-        st.metric(
-            "ICP",
-            f"{enrichment.icp.tier_label}",
-            help=enrichment.icp.rationale,
-        )
-        st.caption(f"Score: {enrichment.icp.score}/100")
-with col2:
-    if strategy:
-        st.metric("Recommended angle", strategy.angle_name)
-        st.caption(strategy.cpo_hypothesis)
-with col3:
-    if critic_result:
-        st.metric(
-            "Critic quality",
-            f"{critic_result.overall_quality:.1f} / 5.0",
-            help=critic_result.critique_summary,
-        )
-        st.caption(f"Rewrites applied: {critic_result.rewrites_applied}")
-
-st.markdown("---")
-
-if strategy:
-    st.markdown(f"### Strategy rationale")
-    st.markdown(f"**Pain signal:** {strategy.pain_signal}")
-    st.markdown(strategy.rationale)
-
-if card:
-    st.markdown("### Before / After")
-    st.markdown(card.before_after)
-
-    st.markdown("### Outreach drafts")
-    angle_tabs = st.tabs([a.tab_label for a in card.angles])
-    for tab, angle in zip(angle_tabs, card.angles):
-        with tab:
-            st.markdown(f"**{angle.name}** ({angle.angle_key})")
-            st.markdown(f"**Subject:** {angle.email_subject}")
-            st.markdown("**Email body:**")
-            st.code(angle.email_body, language="text")
-            st.markdown("**LinkedIn DM:**")
-            st.code(angle.dm, language="text")
-
-    if card.sequence:
-        st.markdown("### Outreach sequence")
-        st.caption(
-            f"Recommended angle: {card.sequence.recommended_angle} · "
-            f"Persona: {card.sequence.entry_persona} · "
-            f"{len(card.sequence.touches)} touches"
-        )
-        for touch in card.sequence.touches:
-            label = f"Touch {touch.touch_number} · Day {touch.day} · {touch.channel}"
-            with st.expander(label):
-                if touch.subject:
-                    st.markdown(f"**Subject:** {touch.subject}")
-                st.code(touch.body, language="text")
-                if touch.note:
-                    st.caption(touch.note)
-
-if enrichment:
-    with st.expander("Enrichment details", expanded=False):
-        if enrichment.live_signals:
-            st.markdown("**Live signals (Exa):**")
-            for s in enrichment.live_signals:
-                st.markdown(f"- [{s.title}]({s.url})" if s.url else f"- {s.title}")
-        if enrichment.contacts:
-            st.markdown("**Contacts (Hunter.io):**")
-            contacts_df = pd.DataFrame(
-                [c.model_dump() for c in enrichment.contacts]
-            )[["name", "position", "email", "confidence"]]
-            st.dataframe(contacts_df, hide_index=True, use_container_width=True)
-        if enrichment.research_summary:
-            st.markdown("**Research summary:**")
-            st.markdown(enrichment.research_summary)
-
-if crm_result and not crm_result.skipped:
-    if crm_result.success:
-        st.success(f"Synced to Notion: {crm_result.page_url}")
-    else:
-        st.warning(f"Notion sync failed: {crm_result.error}")
-
-with st.expander("Full trace", expanded=False):
-    st.code("\n".join(trace_lines), language="text")
+render_main(tenant, final_state)
