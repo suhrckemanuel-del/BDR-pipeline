@@ -1,0 +1,185 @@
+[
+  {
+    "key": "angle1",
+    "proof_points": [
+      "Globex cut their forecast variance from 18% to 4% in one quarter after deploying Acme across three sales segments.",
+      "At Globex, Acme replaced gut-feel pipeline reviews with deal-risk signals tied to actual buyer behaviour — variance dropped to 4% in a quarter.",
+      "Globex used Acme to compress forecast review cycles from weekly all-hands to a 30-minute exception call — variance fell to 4%."
+    ],
+    "email_offers": [
+      "Happy to send the Globex forecast playbook — one page, no call needed.",
+      "Worth a look at how Globex mapped their forecast process to {company}'s segments.",
+      "I can share the operating model behind Globex's rollout and where it fits {company}."
+    ],
+    "dm_offers": [
+      "Happy to send the playbook for {company} — one page.",
+      "Worth a look for {company}?",
+      "I can send the playbook and map it to {company}."
+    ],
+    "subject_templates": [
+      "Forecast accuracy at {company}",
+      "{company} pipeline confidence",
+      "Forecast variance at {company}"
+    ],
+    "followup_bodies": [
+      "Sent a note on {company}'s forecast process last week. If the timing is off, a 15-minute window after end-of-quarter would be enough.",
+      "Following up on the forecast confidence gap at {company}. Happy to send the Globex playbook first — no call needed.",
+      "Quick follow-up on the forecast accuracy issue at {company}. Happy to share how teams at that scale solved it without a process overhaul."
+    ],
+    "followup_subjects": [
+      "Re: forecast accuracy at {company}",
+      "Following up — pipeline confidence at {company}",
+      "One-pager on the forecast process"
+    ],
+    "social_proof_bodies": [
+      "Tried twice on the forecast accuracy gap at {company}, so I'll keep this short. Initech was running 22% forecast variance across four segments — after Acme they hit 5%. Happy to put the one-pager together for {company} if useful.",
+      "One more on the forecast confidence gap. Hooli reduced forecast review time from 4 hours weekly to 30 minutes once the deal-risk signals were live. Happy to send the two-page overview.",
+      "Third note on forecast accuracy. Pied Piper moved their forecast review from rep-by-rep gut-check to exception-only across all segments. The workflow is straightforward — happy to share it."
+    ],
+    "social_proof_subjects": [
+      "One example on forecast accuracy",
+      "How {company}-scale teams cut variance",
+      "One case on pipeline confidence"
+    ],
+    "breakup_bodies": [
+      "Last note on the forecast accuracy gap at {company}. If this isn't on the radar for the current quarter, no problem — reach back when the next QBR cycle opens or if the board pressure picks up.",
+      "Final one on the forecast variance gap. If the timing is off, I'll leave it here — happy to reconnect when the next planning cycle restarts.",
+      "Last note on forecast confidence. If this isn't a priority right now, completely understood. Reach back when the next quarter close kicks off."
+    ],
+    "breakup_subjects": [
+      "Last note — forecast accuracy at {company}",
+      "Closing the loop on pipeline confidence",
+      "Final note on forecast variance"
+    ],
+    "linkedin_connect_notes": [
+      "Working on the forecast accuracy problem at scale-stage SaaS — saw {company} in our ICP. Happy to connect.",
+      "Focused on forecast confidence for CRO teams — {company} fits squarely. Happy to connect.",
+      "Revenue intelligence for sales leaders — {company} is a good fit. Happy to connect."
+    ],
+    "email_filler_p1": "That tends to leave leadership reacting to misses instead of preventing them.",
+    "email_filler_p2": "It gave the team a faster way to see deal risk before it hit the forecast.",
+    "email_filler_p3": "That is typically where the manual rep-by-rep review falls behind first."
+  },
+  {
+    "key": "angle2",
+    "proof_points": [
+      "Initech's first-line managers shifted from 6 hours of weekly call review to a 45-minute coaching loop using Acme — without adding headcount.",
+      "At Initech, Acme cut manager coaching prep time by 80% and ramp time for new reps by 6 weeks.",
+      "Initech used Acme to make manager coaching systematic across 40 reps — coaching time stayed flat, output doubled."
+    ],
+    "email_offers": [
+      "Happy to send the Initech coaching workflow — one slide showing the manager loop at {company}'s scale.",
+      "Worth a look at how Initech runs the coaching loop — I can map it to {company}.",
+      "I can walk through the manager workflow Initech uses and show where it would sit at {company}."
+    ],
+    "dm_offers": [
+      "Happy to show where it fits {company}'s managers.",
+      "Worth a look at the workflow for {company}?",
+      "I can map that setup to {company}."
+    ],
+    "subject_templates": [
+      "Coaching bandwidth at {company}",
+      "{company} manager coaching loop",
+      "Manager effectiveness at {company}"
+    ],
+    "followup_bodies": [
+      "Quick follow-up on the manager coaching loop at {company}. One slide maps the Initech workflow — happy to send it.",
+      "Following up on the coaching bandwidth gap at {company}. Initech's manager loop takes two minutes to explain — happy to drop it in an email.",
+      "Last week's note was about how managers run coaching at {company}. Happy to show the workflow if the timing works better now."
+    ],
+    "followup_subjects": [
+      "Re: manager coaching at {company}",
+      "Following up — coaching workflow",
+      "One slide on the manager loop"
+    ],
+    "social_proof_bodies": [
+      "Third note on the coaching loop. Hooli runs Acme as the coaching layer for 60 first-line managers — coaching prep time fell 75%. Happy to send the architecture mapped to {company}.",
+      "One more on the manager workflow. Pied Piper's setup took three weeks to roll out across all sales pods. Happy to share the rollout overview.",
+      "Third note on the coaching bandwidth gap. Teams in {industry} typically run Acme across managers in under 30 days. Happy to send the onboarding overview."
+    ],
+    "social_proof_subjects": [
+      "The manager workflow that fits {company}",
+      "How teams scale coaching without adding headcount",
+      "One slide on the coaching layer"
+    ],
+    "breakup_bodies": [
+      "Last note on the coaching bandwidth gap at {company}. If the manager structure is settled or the timing is wrong, no worries — reach back when the next ramp cohort starts.",
+      "Final one on the manager workflow. If this isn't a priority at {company} right now, I'll leave it here — happy to reconnect after the next planning cycle lands.",
+      "Last note on the coaching loop. If you're not exploring this space right now, completely fine — reach back when the next manager training cycle starts."
+    ],
+    "breakup_subjects": [
+      "Last note — coaching at {company}",
+      "Closing the loop on manager bandwidth",
+      "Final note on the coaching workflow"
+    ],
+    "linkedin_connect_notes": [
+      "Working on the manager coaching bandwidth problem — saw {company} has a multi-segment sales org. Happy to connect.",
+      "Focused on the manager coaching loop above the CRM layer — {company} came up. Happy to connect.",
+      "Coaching workflow for first-line managers — {company} fits the profile. Happy to connect."
+    ],
+    "email_filler_p1": "That planning gap often slows new-rep ramp before it begins.",
+    "email_filler_p2": "It gave managers a dedicated place to run coaching without adding tooling.",
+    "email_filler_p3": "That coaching gap sits above the CRM, not inside it."
+  },
+  {
+    "key": "angle3",
+    "proof_points": [
+      "Pied Piper used Acme to bring coverage scoring to the segment level — territory rebuilds went from quarterly to continuous without adding RevOps headcount.",
+      "Pied Piper used Acme to move from a single 3x-coverage number to per-segment quality scoring — RevOps stopped firefighting and started planning.",
+      "Pied Piper used Acme to expand pipeline coverage scrutiny across all four sales segments without proportionally scaling the RevOps team."
+    ],
+    "email_offers": [
+      "Happy to share the pipeline-coverage benchmark we use for {industry}.",
+      "Worth a look at the {industry} benchmark — no call needed, I can send it.",
+      "I can share the benchmark for {industry} and where teams usually start."
+    ],
+    "dm_offers": [
+      "Happy to share the {industry} benchmark.",
+      "Worth a look at the first gaps for {industry}?",
+      "I can share the benchmark and where teams start."
+    ],
+    "subject_templates": [
+      "Pipeline coverage at {company}",
+      "{company} segment coverage gap",
+      "Coverage quality at {company}"
+    ],
+    "followup_bodies": [
+      "Following up on the pipeline coverage gap. Happy to share the {industry} benchmark first — useful even if the timing is off.",
+      "Quick follow-up on coverage quality at {company}. The benchmark for {industry} is one page — happy to send it with no strings attached.",
+      "Last note was on the segment coverage gap. Happy to share what the first 90 days looks like for teams in {industry}."
+    ],
+    "followup_subjects": [
+      "Re: segment coverage at {company}",
+      "Following up — pipeline coverage",
+      "{industry} benchmark — no call needed"
+    ],
+    "social_proof_bodies": [
+      "Third note on segment coverage. Globex moved 40% of previously thin-coverage segments under proper quality scoring in one quarter. The first 90 days is a clear pattern — happy to share the plan.",
+      "One more on the coverage gap. {industry} teams typically lift segment quality scores by 20-30% in the first quarter. Happy to share the benchmark.",
+      "Third note on coverage quality. The biggest gaps in {industry} are often mid-market segments and new-territory builds — happy to share the segment scan."
+    ],
+    "social_proof_subjects": [
+      "One example on segment coverage",
+      "The first 90 days in {industry}",
+      "Coverage quality case for {industry}"
+    ],
+    "breakup_bodies": [
+      "Last note on the segment coverage gap at {company}. If the territory plan is settled or the timing is off, no worries — reach back when the next planning cycle or fiscal-year prep starts.",
+      "Final one on coverage quality. If this isn't on the agenda, I'll leave it here — happy to reconnect when the next territory review comes around.",
+      "Last note on segment coverage. If priorities are elsewhere right now, I'll stop here. Reach back when the next RevOps planning cycle opens."
+    ],
+    "breakup_subjects": [
+      "Last note — coverage at {company}",
+      "Closing the loop on segment quality",
+      "Final note on {industry} coverage"
+    ],
+    "linkedin_connect_notes": [
+      "Working on segment-level pipeline coverage for scale-stage SaaS — {company} has the profile. Happy to connect.",
+      "Focused on coverage quality at {company}'s scale. Happy to connect.",
+      "Pipeline coverage scoring for RevOps teams with multi-segment orgs — happy to connect."
+    ],
+    "email_filler_p1": "That means part of the territory plan is still running on inertia.",
+    "email_filler_p2": "It gave RevOps a scalable way to widen coverage scrutiny.",
+    "email_filler_p3": "That is where teams find how much pipeline is still uncovered at the segment level."
+  }
+]

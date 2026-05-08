@@ -1,0 +1,55 @@
+# Demo tenant config — example positioning for a fictional B2B SaaS company.
+# Copy this folder to `tenants/<your-slug>/` and edit to onboard a new tenant.
+# Fields with extra="forbid" — unknown keys will raise a validation error.
+
+brand:
+  name: Acme Analytics
+  short_name: Acme
+  icon: "📊"
+  tagline: "Revenue intelligence for B2B sales teams"
+  primary_color: "#2563EB"
+
+business:
+  description: >
+    Acme Analytics is a revenue intelligence platform for B2B sales teams. It
+    plugs into Salesforce, Gong, and Slack, then surfaces deal-risk signals,
+    pipeline coverage gaps, and rep coaching opportunities that managers
+    typically catch only after a deal slips.
+  headline_metric: "30% faster deal-risk detection"
+  reference_customers:
+    - Globex Industries
+    - Initech
+    - Hooli
+    - Pied Piper
+
+persona:
+  title: VP of Sales
+  title_alternates:
+    - Chief Revenue Officer
+    - Head of Revenue Operations
+    - VP of Revenue Operations
+  seniority_filter:
+    - c_suite
+    - executive
+    - director
+    - vp
+
+icp:
+  tier1_label: "Tier 1 — Strategic SaaS"
+  tier2_label: "Tier 2 — Growth SaaS"
+  tier3_label: "Tier 3 — Below Threshold"
+  tier_criteria: >
+    Tier 1 = $50M+ ARR, 100+ AEs, multi-product. Tier 2 = $10–50M ARR,
+    20–100 AEs. Tier 3 = below $10M ARR or unclear go-to-market shape.
+
+sender:
+  name: Your Name
+  title: GTM Lead
+  email_signature: |
+    Your Name
+    GTM Lead, Acme Analytics
+  dm_signoff: Your Name
+
+crm:
+  enabled: false
+  notion_database_id: null

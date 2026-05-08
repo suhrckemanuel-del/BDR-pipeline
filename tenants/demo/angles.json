@@ -1,0 +1,26 @@
+[
+  {
+    "key": "angle1",
+    "name": "Forecast Confidence Gap",
+    "tab_label": "Forecast Gap",
+    "description": "Forecast Confidence Gap: leadership lost trust in pipeline calls; recent miss; new CRO investigating accuracy.",
+    "core_insight": "Revenue leaders are publicly grilled on forecast accuracy by boards and CFOs, yet most pipeline calls still rely on rep self-reporting in Salesforce. When a quarter slips, the postmortem always names the same villain — 'the data lied to us' — but the org never structurally fixes the visibility problem. Lead with the forecast accuracy frame and you tap into a CRO's most exposed nerve: being wrong in front of the board.",
+    "avoid": "Do NOT lead with 'AI-powered insights' or feature lists. The CRO has been pitched conversation intelligence twenty times — what they want is structural confidence in their numbers, not another tool to log into."
+  },
+  {
+    "key": "angle2",
+    "name": "Coaching Bandwidth Wedge",
+    "tab_label": "Coaching Wedge",
+    "description": "Coaching Bandwidth Wedge: managers stretched across too many reps; ramp time too long; no scalable coaching loop.",
+    "core_insight": "First-line sales managers are the highest-leverage role in any B2B org and the most underequipped — they're expected to coach 8–12 reps while carrying their own number, and the coaching loop runs on memory and gut feel. Acme makes the coaching loop systematic without adding a layer to manage. Position this as a manager-effectiveness lever, not a rep-monitoring tool, and you sidestep the surveillance objection.",
+    "avoid": "Do NOT pitch this as a way to police reps. The moment it sounds like rep monitoring you lose the manager — they hate surveillance tools as much as their reps do."
+  },
+  {
+    "key": "angle3",
+    "name": "Pipeline Coverage Trigger",
+    "tab_label": "Coverage Trigger",
+    "description": "Pipeline Coverage Trigger: pipeline-to-quota ratio is below 3x, RevOps is rebuilding territory plans, segment misses repeat.",
+    "core_insight": "When pipeline coverage drops below the 3x rule of thumb, RevOps and the CRO go into firefighting mode — but the fix usually comes from re-segmenting territories, not from generating real coverage. Acme reframes coverage from a top-line number into a per-segment quality score, which is the conversation RevOps actually wants to have but rarely has the data layer to support. This works because it speaks RevOps' own KPIs.",
+    "avoid": "Do NOT make this about generic 'pipeline generation.' Every demand-gen vendor pitches that. The angle dies if it collapses into 'we'll help you fill the funnel' — the power is in segmentation quality, not raw volume."
+  }
+]

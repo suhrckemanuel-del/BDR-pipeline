@@ -1,0 +1,40 @@
+Acme Analytics ICP Definition
+=============================
+
+Acme sells to revenue leaders at B2B SaaS companies in the growth-to-scale
+band. We're a fit when the buyer feels pipeline visibility pain *and* has the
+data infrastructure to make a revenue intelligence layer worthwhile.
+
+Tier 1 — Strategic SaaS (highest priority)
+  - $50M+ ARR
+  - 100+ AEs across multiple segments / regions
+  - Multi-product or multi-motion (PLG + sales-led, etc.)
+  - Salesforce + a conversation intelligence tool already deployed
+  - Public RevOps team or named CRO who has spoken at industry events
+  - Examples: Series D+ SaaS, recently public, late growth
+
+Tier 2 — Growth SaaS (active prospect band)
+  - $10–50M ARR
+  - 20–100 AEs
+  - Salesforce live, conversation intelligence either deployed or evaluating
+  - Identifiable RevOps function (not just a single Sales Ops analyst)
+  - Recent funding round (Series B/C) is a positive signal
+
+Tier 3 — Below Threshold (deprioritize)
+  - Sub-$10M ARR
+  - <20 AEs
+  - HubSpot only, no dedicated RevOps function
+  - Founder-led sales without operational infrastructure
+
+Disqualifiers
+  - Pure transactional B2C
+  - Hardware-only sales motions
+  - Companies on legacy CRM (other than Salesforce or HubSpot)
+  - Government / public sector primary
+
+Buying triggers (boost any tier by one band)
+  - New CRO or VP Sales hired in last 90 days
+  - Recent layoff round (signals revenue scrutiny)
+  - Public miss on quarterly earnings
+  - Forecast accuracy mentioned in earnings call or RevOps job postings
+  - New conversation intelligence deployment

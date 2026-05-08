@@ -1,0 +1,63 @@
+# Secrets
+.env
+.env.local
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+ENV/
+
+# Streamlit
+.streamlit/secrets.toml
+streamlit-*.log
+streamlit-*.err
+streamlit-*.out.log
+streamlit-*.err.log
+streamlit_*.log
+streamlit_*.err
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Tooling state
+.claude/settings.local.json
+.tmp_chrome_profile_*/
+tmp_*.png
+tmp_*.html
+
+# Generated / runtime artifacts
+pipeline/checkpoints.db
+*.db
+*.sqlite
+*.sqlite3
+tenants/*/data/queued/
+tenants/*/data/saved_states/
+tenants/*/data/insights.csv
+
+# Office / temp files
+*.tmp
+~$*
