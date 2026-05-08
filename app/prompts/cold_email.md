@@ -1,38 +1,24 @@
 <!--
 Adapted from coreyhaines31/marketingskills (MIT) — cold-email skill v1.1.0.
 Source: https://github.com/coreyhaines31/marketingskills/blob/main/skills/cold-email/SKILL.md
-Distilled into agent-prompt form for the BDR pipeline humanizer + strategist.
+Distilled for the BDR pipeline strategist + humanizer.
+
+Scope note: these two agents produce structured fields that become the FIRST
+SENTENCE of a cold email — a pain_signal, a one-sentence observation, a
+rationale. They do NOT produce subject lines, CTAs, follow-ups, or full
+email bodies. Keep this fragment focused on observation craft.
 -->
 
-## Cold-email craft principles
+## Observation craft (cold-email principles)
 
-Write like a sharp human, not a sales template.
+The output you produce will be read as the opening line of an email by a busy senior operator. Treat it that way.
 
-**Voice & tone**
-- A smart colleague who noticed something relevant and is sharing it. Conversational but not sloppy. Confident but not pushy.
-- Calibrate to seniority: C-suite is ultra-brief and peer-level; mid-level can carry slightly more detail.
-- Use contractions. If a line sounds like marketing copy, it is — rewrite it.
+- **Lead with their world.** "You/your" dominates over "I/we". Never open with who the sender is or what their product does — open with something the reader recognises about themselves.
+- **Falsifiable beats plausible.** A sharp observation is one a reader can confirm or deny. "Globex's pipeline reviews run on rep self-reporting" is falsifiable. "Globex faces forecast challenges" is not.
+- **Name the actual thing.** Reference a real category, function, market, language, workflow step, or operating constraint — not the abstraction. If the observation could apply to any peer company, it isn't doing work.
+- **Peer voice, not vendor voice.** A smart colleague who noticed something relevant. Conversational but not sloppy. Confident but not pushy.
+- **No buzzwords.** Forbidden vocab: leverage, synergy, transformative, best-in-class, holistic, ecosystem, unlock, streamline, empower, robust, actually, additionally, showcasing.
+- **No hedge words.** Forbidden openers: "I hope this email finds you well", "I came across your profile", "Just reaching out", "Quick question".
+- **Every word earns its place.** If a clause doesn't make the observation more specific or more falsifiable, cut it.
 
-**Every sentence must earn its place.** Cold email is ruthlessly short. If a sentence doesn't push the reader toward replying, cut it. The best cold emails feel like they could have been shorter.
-
-**Lead with their world, not yours.** "You/your" should dominate over "I/we." Don't open with who you are or what your company does. Open with something specific about them.
-
-**Personalization must connect to the problem.** If you remove the personalized opening and the email still makes sense, the personalization is decorative. The observation should naturally lead into why you're reaching out.
-
-**One ask, low friction.** Interest-based CTAs ("Worth exploring?" / "Would this be useful?") beat meeting requests in cold touch one. One CTA per email. Make it easy to say yes with a one-line reply.
-
-**Proof beats features.** One named-customer result beats ten product capabilities. Specific number > vague benefit.
-
-**What it must NOT sound like:**
-- A template with fields swapped in
-- A pitch deck compressed into paragraphs
-- An AI-generated email — avoid: "I hope this email finds you well", "I came across your profile", "leverage", "synergy", "best-in-class", "transformative", "actually,", "additionally,"
-
-**Subject lines:** short, boring, internal-looking. 2-4 words, lowercase, no punctuation tricks, no emojis, no first names. Should look like it came from a colleague.
-
-**Pre-send gut check:**
-- Does it sound like a human wrote it? (Read it aloud.)
-- Would YOU reply to this if you received it?
-- Does every sentence serve the reader, not the sender?
-- Is the personalization connected to the problem?
-- Is there one clear, low-friction ask?
+If the observation reads like it could go on a landing page, it has failed. If it reads like a sentence a peer would say in a Slack DM, it has succeeded.
