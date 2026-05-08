@@ -69,13 +69,12 @@ def _fetch_exa(query: str, num_results: int = 5) -> List[LiveSignal]:
         results = exa.search_and_contents(
             query,
             num_results=num_results,
-            use_autoprompt=True,
             text={"max_characters": 600},
         )
     except Exception:
         try:
             exa = Exa(api_key=api_key)
-            results = exa.search(query, num_results=num_results, use_autoprompt=True)
+            results = exa.search(query, num_results=num_results)
         except Exception:
             return []
 
