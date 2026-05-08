@@ -15,6 +15,7 @@ import os
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.prompts import load_prompt
 from app.tenants.schema import TenantConfig
 
 from .state import (
@@ -50,7 +51,11 @@ def _build_system_prompt(tenant: TenantConfig) -> str:
         "Return your decision via the StrategyDecision schema. Be specific and "
         "grounded in the enrichment data — cite the actual signal, ICP score "
         "component, or technographic mention that drove your pick. No generic "
-        "platitudes."
+        "platitudes.\n\n"
+        "The pain_signal and cpo_hypothesis you produce will feed the email writer. "
+        "Write them so a human reader of the resulting email would say 'yes, that's "
+        "us' — falsifiable, not boilerplate.\n\n"
+        + load_prompt("cold_email")
     )
 
 

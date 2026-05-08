@@ -25,6 +25,7 @@ import re
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.prompts import load_prompt
 from app.services.humanizer_rules import humanize_angle_draft, humanize_sequence
 from app.tenants.schema import AngleCopy, TenantConfig
 
@@ -97,7 +98,11 @@ def _build_system_prompt(tenant: TenantConfig) -> str:
         f"  - Before/After narrative: 2 short paragraphs. The After paragraph describes "
         f"the outcome with {tenant.brand.name}.{after_hint}\n"
         f"  - The After paragraph MUST NOT start with 'With {tenant.brand.name}:' — "
-        "the assembler prepends that prefix."
+        "the assembler prepends that prefix.\n\n"
+        "Your observations will be the FIRST paragraph of a cold email. Apply the "
+        "principles below — the observation must read like a peer noticed something "
+        "real, not like a template field was filled in.\n\n"
+        + load_prompt("cold_email")
     )
 
 
