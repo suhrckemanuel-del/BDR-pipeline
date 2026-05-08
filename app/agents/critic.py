@@ -275,15 +275,30 @@ def run_critic(state: BDRState) -> dict:
         llm = ChatAnthropic(
             model=MODEL,
             api_key=api_key,
-            max_tokens=1500,
+            max_tokens=4000,
             temperature=0.2,
         )
         critic_llm = llm.with_structured_output(SequenceCritique)
 
         human_msg = _build_critic_human_message(touches, company)
-        critique: SequenceCritique = critic_llm.invoke(
-            [SystemMessage(content=_build_critic_system(tenant)), HumanMessage(content=human_msg)]
-        )
+        try:
+            critique: SequenceCritique = critic_llm.invoke(
+                [SystemMessage(content=_build_critic_system(tenant)), HumanMessage(content=human_msg)]
+            )
+        except Exception as score_exc:  # noqa: BLE001
+            # Structured output sometimes returns {} on long inputs; surface a neutral
+            # CriticResult instead of crashing the pipeline.
+            logger.warning("Critic: scoring call failed (%s) — returning neutral result", score_exc)
+            trace.append(f"Critic: scoring failed ({type(score_exc).__name__}) — neutral result")
+            return {
+                "card": card,
+                "critic_result": CriticResult(
+                    overall_quality=0.0,
+                    rewrites_applied=0,
+                    critique_summary="Critic skipped — scoring call failed.",
+                ),
+                "agent_trace": trace,
+            }
 
         n_touches = len(critique.touch_scores)
         avg = critique.overall_quality
