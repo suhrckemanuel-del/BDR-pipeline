@@ -1,0 +1,216 @@
+{
+  "language": "en",
+  "duration": 216.5546875,
+  "segments": [
+    {
+      "start": 0.43,
+      "end": 6.99,
+      "text": "Hey, I'm Manuel, and this is the BDR pipeline I built as a proof artifact for AI-assisted"
+    },
+    {
+      "start": 6.99,
+      "end": 8.83,
+      "text": "go-to-market workflows."
+    },
+    {
+      "start": 8.83,
+      "end": 11.19,
+      "text": "The idea is simple."
+    },
+    {
+      "start": 11.19,
+      "end": 16.19,
+      "text": "Take a target company, enrich it with public signals, choose a relevant outreach angle,"
+    },
+    {
+      "start": 16.19,
+      "end": 22.67,
+      "text": "generate a multi-touch sequence and run a quality critique before a human reviews anything."
+    },
+    {
+      "start": 22.67,
+      "end": 24.63,
+      "text": "I want to be clear about the claim."
+    },
+    {
+      "start": 24.63,
+      "end": 26.51,
+      "text": "This is not a revenue case study."
+    },
+    {
+      "start": 26.51,
+      "end": 31.95,
+      "text": "I do not have campaign metrics or permission to show private client data, so this public"
+    },
+    {
+      "start": 31.95,
+      "end": 35.55,
+      "text": "version uses anonymized demo companies."
+    },
+    {
+      "start": 35.55,
+      "end": 41.43,
+      "text": "The honest claim is, I built a multi-agent video workflow that turns a target company"
+    },
+    {
+      "start": 41.43,
+      "end": 48.39,
+      "text": "into a researched outreach using live signals, tenant-specific positioning, sequence generation"
+    },
+    {
+      "start": 48.39,
+      "end": 50.31,
+      "text": "and a critic pass."
+    },
+    {
+      "start": 50.31,
+      "end": 54.87,
+      "text": "The problem is that outbound prep is just straight up slow."
+    },
+    {
+      "start": 54.87,
+      "end": 59.55,
+      "text": "For each account, someone has a research company, understand what is happening to the business."
+    },
+    {
+      "start": 59.55,
+      "end": 65.03,
+      "text": "Find the right persona, choose an angle, write the first email, write follow-ups and check"
+    },
+    {
+      "start": 65.03,
+      "end": 66.67,
+      "text": "whether it sounds human."
+    },
+    {
+      "start": 66.67,
+      "end": 71.27,
+      "text": "That can easily take up to 20 to 30 minutes per account."
+    },
+    {
+      "start": 71.27,
+      "end": 77.03,
+      "text": "So I build a repeatable workflow instead of a one-off prompt."
+    },
+    {
+      "start": 77.03,
+      "end": 82.71,
+      "text": "The app uses streamlets for the interface and land graph for orchestration."
+    },
+    {
+      "start": 82.71,
+      "end": 84.55,
+      "text": "The first stage is enrichment."
+    },
+    {
+      "start": 84.55,
+      "end": 92.79,
+      "text": "The system pulls public company signals with EXR and uses hot.io for contact information"
+    },
+    {
+      "start": 92.79,
+      "end": 101.63,
+      "text": "discovery when obviously real data exists and uses Claude to summarize the accounts through"
+    },
+    {
+      "start": 101.63,
+      "end": 104.43,
+      "text": "configured ICP and persona."
+    },
+    {
+      "start": 104.43,
+      "end": 111.07,
+      "text": "Next, the strategist chooses one of the three tenant-defined outreach angles that matters"
+    },
+    {
+      "start": 111.07,
+      "end": 116.55,
+      "text": "because good outbound is not just better wording, it's choosing the right reason to reach"
+    },
+    {
+      "start": 116.55,
+      "end": 117.55,
+      "text": "out."
+    },
+    {
+      "start": 117.55,
+      "end": 121.67,
+      "text": "Then, the humanizer creates an outreach package."
+    },
+    {
+      "start": 121.67,
+      "end": 130.55,
+      "text": "The model generates specific observations, but proof points, CTAs, subject lines and follow-up"
+    },
+    {
+      "start": 130.55,
+      "end": 134.27,
+      "text": "structures come from tenant-copy banks."
+    },
+    {
+      "start": 134.27,
+      "end": 138.15,
+      "text": "That keeps the output more consistent and less generic."
+    },
+    {
+      "start": 138.15,
+      "end": 144.79,
+      "text": "The pipeline then creates a sequence, LinkedIn Connect, first email, follow-up, social proof,"
+    },
+    {
+      "start": 144.79,
+      "end": 147.23,
+      "text": "LinkedIn DM and break up email."
+    },
+    {
+      "start": 147.23,
+      "end": 155.03,
+      "text": "Finally, the critic scores each touch on pain specificity, proof relevance, CTA clarity"
+    },
+    {
+      "start": 155.03,
+      "end": 156.71,
+      "text": "and human voice."
+    },
+    {
+      "start": 156.71,
+      "end": 166.31,
+      "text": "The output is not autosent, it's a research first draft for human to review and edit."
+    },
+    {
+      "start": 166.31,
+      "end": 171.95,
+      "text": "All the public demo are using fictional companies, so contact discovery is not being found"
+    },
+    {
+      "start": 171.95,
+      "end": 182.03,
+      "text": "here, but it will be found when using real companies as X, as hunter.io is very reliable."
+    },
+    {
+      "start": 182.03,
+      "end": 188.83,
+      "text": "The workflow works quite well, but this is just the first draft and the things I would like"
+    },
+    {
+      "start": 188.83,
+      "end": 197.59,
+      "text": "to improve are reply tracking, CRM export, campaign analytics, better ICP scoring and an"
+    },
+    {
+      "start": 197.59,
+      "end": 205.15,
+      "text": "EVA system which learns from previous runs to improve each run after each other."
+    },
+    {
+      "start": 205.15,
+      "end": 212.51,
+      "text": "But now this workflow just shows at a low level and a service level how AI workflows can"
+    },
+    {
+      "start": 212.51,
+      "end": 214.15,
+      "text": "improve real business problems."
+    }
+  ]
+}

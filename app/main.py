@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
@@ -100,10 +101,31 @@ if inputs.selected_tenant != _DEFAULT:
 
 tenant = _default_tenant
 
+if inputs.clear_last_result_clicked:
+    for _key in (
+        "last_final_state",
+        "last_tenant_id",
+        "last_company",
+        "last_industry",
+        "last_run_completed_at",
+    ):
+        st.session_state.pop(_key, None)
+    st.rerun()
+
 # ---------------------------------------------------------------------------
 # Routing — empty / running / complete
 # ---------------------------------------------------------------------------
-if not inputs.run_clicked or not inputs.company:
+if not inputs.run_clicked:
+    last_state = st.session_state.get("last_final_state")
+    if last_state and st.session_state.get("last_tenant_id") == tenant.tenant_id:
+        last_company = st.session_state.get("last_company") or last_state.get("company") or "last account"
+        st.caption(f"Showing last completed run for {last_company}. Run again to refresh.")
+        render_main(tenant, last_state)
+        st.stop()
+    render_empty(tenant)
+    st.stop()
+
+if not inputs.company:
     render_empty(tenant)
     st.stop()
 
@@ -161,6 +183,12 @@ if not final_state:
 if final_state.get("error"):
     st.error(f"Pipeline error: {final_state['error']}")
     st.stop()
+
+st.session_state["last_final_state"] = final_state
+st.session_state["last_tenant_id"] = tenant.tenant_id
+st.session_state["last_company"] = final_state.get("company") or inputs.company
+st.session_state["last_industry"] = final_state.get("industry") or inputs.industry
+st.session_state["last_run_completed_at"] = datetime.now(timezone.utc).isoformat()
 
 # ---------------------------------------------------------------------------
 # Render results

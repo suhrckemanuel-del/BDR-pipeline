@@ -1,0 +1,56 @@
+{
+  "mode": "sample",
+  "tenant_id": "demo",
+  "evaluated_on": "2026-06-11",
+  "disclaimer": "Internal demo workflow metrics only. No reply rates, meeting rates, revenue, or campaign lift are claimed.",
+  "rows": [
+    {
+      "account": "Globex Industries",
+      "industry_context": "B2B SaaS | Series D revenue intelligence customer; 120 AEs across 3 segments",
+      "run_completed": "yes",
+      "runtime_seconds": "0.00",
+      "evidence_card_count": 3,
+      "high_confidence_evidence_count": 1,
+      "contact_count": 0,
+      "account_score": 80,
+      "priority_label": "high_priority",
+      "quality_gate_verdict": "needs_edit",
+      "risk_flag_count": 1,
+      "unsupported_claim_count": 1,
+      "report_generated": "yes",
+      "notes_errors": ""
+    },
+    {
+      "account": "Initech",
+      "industry_context": "B2B SaaS | Series C; recent CRO hire focused on forecast accuracy",
+      "run_completed": "yes",
+      "runtime_seconds": "0.00",
+      "evidence_card_count": 2,
+      "high_confidence_evidence_count": 1,
+      "contact_count": 0,
+      "account_score": 74,
+      "priority_label": "review",
+      "quality_gate_verdict": "approved",
+      "risk_flag_count": 0,
+      "unsupported_claim_count": 0,
+      "report_generated": "yes",
+      "notes_errors": ""
+    },
+    {
+      "account": "Hooli",
+      "industry_context": "B2B SaaS | Late-stage; multi-product motion (PLG + sales-led)",
+      "run_completed": "yes",
+      "runtime_seconds": "0.00",
+      "evidence_card_count": 3,
+      "high_confidence_evidence_count": 1,
+      "contact_count": 1,
+      "account_score": 72,
+      "priority_label": "review",
+      "quality_gate_verdict": "needs_edit",
+      "risk_flag_count": 1,
+      "unsupported_claim_count": 1,
+      "report_generated": "yes",
+      "notes_errors": ""
+    }
+  ]
+}

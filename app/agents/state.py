@@ -48,6 +48,43 @@ class ContactLead(BaseModel):
     linkedin_url: str = ""
 
 
+class EvidenceCard(BaseModel):
+    """Evidence-backed claim surfaced from enrichment data."""
+    evidence_id: str
+    claim: str = ""
+    source_title: str = ""
+    source_url: str = ""
+    source_type: Literal["live_signal", "job_signal", "contact", "icp_score", "manual_trigger"]
+    support_type: Literal["observed", "derived", "inferred"]
+    confidence_label: Literal["high", "medium", "low"]
+    confidence_score: int = Field(default=0, ge=0, le=100)
+    excerpt: str = ""
+    safe_to_use: bool = False
+    used_in_outreach: bool = False
+    notes: str = ""
+
+
+class ScoreComponent(BaseModel):
+    """One transparent component of the account-readiness score."""
+    label: str
+    score: int = Field(default=0, ge=0, le=5)
+    rationale: str
+    evidence_ids: List[str] = []
+
+
+class AccountScoringResult(BaseModel):
+    """Transparent account-readiness score for founder review."""
+    overall_score: int = Field(default=0, ge=0, le=100)
+    priority_label: Literal["high_priority", "review", "needs_more_research", "do_not_send_yet"]
+    icp_fit: ScoreComponent
+    pain_evidence: ScoreComponent
+    trigger_strength: ScoreComponent
+    contact_confidence: ScoreComponent
+    evidence_quality: ScoreComponent
+    recommended_action: str
+    warnings: List[str] = []
+
+
 class TargetProfile(BaseModel):
     """User-provided person context for hyper-personalized outreach."""
     name: str = ""
@@ -94,6 +131,8 @@ class EnrichmentResult(BaseModel):
     live_signals: List[LiveSignal] = []
     job_signals: List[LiveSignal] = []
     contacts: List[ContactLead] = []
+    evidence_cards: List[EvidenceCard] = []
+    account_score: Optional[AccountScoringResult] = None
     icp: Optional[ICPClassification] = None
     research_summary: str = Field(
         default="", description="LLM-synthesised view of the live signals through the persona lens."

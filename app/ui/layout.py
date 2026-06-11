@@ -8,13 +8,18 @@ state, and stage-progress tracking.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
 from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
 
+from app.services.report_builder import build_account_report_markdown, build_report_filename
 from app.tenants.schema import TenantConfig
 from app.ui import components as C
+
+
+CUSTOM_PROSPECT_OPTION = "__custom__"
 
 
 @dataclass
@@ -25,6 +30,7 @@ class SidebarInputs:
     trigger_headline: str
     sync_to_notion: bool
     run_clicked: bool
+    clear_last_result_clicked: bool
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +41,17 @@ def render_sidebar(
     available_tenants: list[str],
     pin_locked: bool = False,
 ) -> SidebarInputs:
+    prospects = _load_prospects(tenant)
+
+    def _apply_demo_prospect() -> None:
+        selected = st.session_state.get("ui_demo_prospect", CUSTOM_PROSPECT_OPTION)
+        row = _prospect_from_selection(selected, prospects)
+        if not row:
+            return
+        st.session_state["ui_company"] = (row.get("company") or "").strip()
+        st.session_state["ui_industry"] = (row.get("industry") or "").strip()
+        st.session_state["ui_trigger"] = _prospect_context(row)
+
     with st.sidebar:
         C.brand_block(
             icon=tenant.brand.icon,
@@ -57,7 +74,33 @@ def render_sidebar(
         st.caption(f"Persona · {tenant.persona.title}")
         st.caption(f"Sender · {tenant.sender.name}")
 
+        if tenant.tenant_id == "demo":
+            st.caption(
+                "Demo prospects are anonymized/synthetic examples for portfolio demonstration. "
+                "No reply or meeting metrics are claimed."
+            )
+
         C.sidebar_section("Run a prospect")
+        if prospects:
+            options = [CUSTOM_PROSPECT_OPTION] + [str(i) for i, _ in enumerate(prospects)]
+            selected = st.session_state.get("ui_demo_prospect", CUSTOM_PROSPECT_OPTION)
+            if selected not in options:
+                selected = CUSTOM_PROSPECT_OPTION
+                st.session_state["ui_demo_prospect"] = selected
+            st.selectbox(
+                "Demo prospect",
+                options=options,
+                index=options.index(selected),
+                key="ui_demo_prospect",
+                format_func=lambda option: (
+                    "Custom account"
+                    if option == CUSTOM_PROSPECT_OPTION
+                    else _prospect_label(_prospect_from_selection(option, prospects) or {})
+                ),
+                help="Load a demo account from this tenant's prospects.csv.",
+                on_change=_apply_demo_prospect,
+            )
+
         company = st.text_input(
             "Company",
             placeholder="Globex Industries",
@@ -92,13 +135,21 @@ def render_sidebar(
         )
 
         # Prospect list
-        prospects = _load_prospects(tenant)
         if prospects:
             C.sidebar_section(f"Prospects · {len(prospects)}")
             C.prospect_list(prospects, active_company=company.strip())
         else:
             C.sidebar_section("Prospects")
             st.caption("No prospects.csv for this tenant.")
+
+        clear_last_result_clicked = False
+        if st.session_state.get("last_final_state") and st.session_state.get("last_tenant_id") == tenant.tenant_id:
+            C.sidebar_section("Last result")
+            st.caption(f"Showing last completed run for {st.session_state.get('last_company') or 'last account'}.")
+            clear_last_result_clicked = st.button(
+                "Clear last result",
+                use_container_width=True,
+            )
 
     return SidebarInputs(
         selected_tenant=selection,
@@ -107,6 +158,7 @@ def render_sidebar(
         trigger_headline=trigger_headline.strip(),
         sync_to_notion=sync_to_notion,
         run_clicked=run_clicked,
+        clear_last_result_clicked=clear_last_result_clicked,
     )
 
 
@@ -115,9 +167,39 @@ def _load_prospects(tenant: TenantConfig) -> list[dict]:
         return []
     try:
         df = pd.read_csv(tenant.prospects_csv, dtype=str).fillna("")
-        return df.to_dict(orient="records")
+        rows = []
+        for row in df.to_dict(orient="records"):
+            company = (row.get("company") or "").strip()
+            if company:
+                rows.append({str(k): str(v) for k, v in row.items()})
+        return rows
     except Exception:
         return []
+
+
+def _prospect_label(row: dict) -> str:
+    company = (row.get("company") or "").strip() or "Untitled account"
+    industry = (row.get("industry") or "").strip()
+    return f"{company} ({industry})" if industry else company
+
+
+def _prospect_from_selection(selection: Any, prospects: list[dict]) -> Optional[dict]:
+    selected = str(selection or "")
+    if selected == CUSTOM_PROSPECT_OPTION:
+        return None
+    try:
+        return prospects[int(selected)]
+    except (TypeError, ValueError, IndexError):
+        pass
+    return next((row for row in prospects if _prospect_label(row) == selected), None)
+
+
+def _prospect_context(row: dict) -> str:
+    for key in ("trigger_headline", "trigger", "notes", "context"):
+        value = (row.get(key) or "").strip()
+        if value:
+            return value
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +207,11 @@ def _load_prospects(tenant: TenantConfig) -> list[dict]:
 # ---------------------------------------------------------------------------
 def render_empty(tenant: TenantConfig) -> None:
     C.stage_nav()  # all idle
+    if tenant.tenant_id == "demo":
+        st.info(
+            "Demo prospects are anonymized/synthetic examples for portfolio demonstration. "
+            "No reply or meeting metrics are claimed."
+        )
     C.empty_state(
         icon=tenant.brand.icon or "✨",
         headline=f"Run your first prospect through the {tenant.brand.name} pipeline",
@@ -179,6 +266,13 @@ def render_main(tenant: TenantConfig, state: dict) -> None:
     # KPI strip
     C.kpi_strip(_build_kpis(enrichment, card, critic_result))
 
+    account_score = getattr(enrichment, "account_score", None) if enrichment else None
+    if account_score:
+        C.account_score_panel(account_score)
+
+    if critic_result:
+        C.quality_gate_panel(critic_result)
+
     # Strategy rationale + before/after
     if strategy:
         C.strategy_rationale_card(strategy)
@@ -189,10 +283,12 @@ def render_main(tenant: TenantConfig, state: dict) -> None:
         )
 
     # Tabs
-    tab_seq, tab_research, tab_contacts, tab_drafts = st.tabs(
-        ["Sequence", "Research", "Contacts", "Drafts"]
+    tab_report, tab_seq, tab_research, tab_contacts, tab_drafts = st.tabs(
+        ["Report", "Sequence", "Research", "Contacts", "Drafts"]
     )
 
+    with tab_report:
+        _render_report_tab(tenant, state, company)
     with tab_seq:
         _render_sequence_tab(card)
     with tab_research:
@@ -223,8 +319,20 @@ def _build_kpis(enrichment: Any, card: Any, critic_result: Any) -> list[tuple[st
     else:
         items.append(("ICP Tier", "—", ""))
 
+    account_score = getattr(enrichment, "account_score", None) if enrichment else None
+    if account_score:
+        tone = _priority_tone(getattr(account_score, "priority_label", ""))
+        items.append(("Account Score", str(getattr(account_score, "overall_score", 0)), tone))
+        items.append(("Priority", _readable_priority(getattr(account_score, "priority_label", "")), tone))
+
     contacts = getattr(enrichment, "contacts", []) if enrichment else []
     items.append(("Contacts", str(len(contacts)), ""))
+
+    evidence = getattr(enrichment, "evidence_cards", []) if enrichment else []
+    if evidence:
+        high_conf = sum(1 for c in evidence if getattr(c, "confidence_label", "") == "high")
+        items.append(("Evidence", str(len(evidence)), ""))
+        items.append(("High Conf.", str(high_conf), "good" if high_conf else ""))
 
     signals = getattr(enrichment, "live_signals", []) if enrichment else []
     items.append(("Signals", str(len(signals)), ""))
@@ -246,13 +354,54 @@ def _build_kpis(enrichment: Any, card: Any, critic_result: Any) -> list[tuple[st
         if score is not None:
             tone = "good" if score >= 4.0 else "warn" if score >= 3.0 else "bad"
             items.append(("Critic", f"{score:.1f}/5", tone))
+        gate = getattr(critic_result, "quality_gate", None)
+        if gate:
+            verdict = getattr(gate, "verdict", "") or ""
+            tone = _gate_tone(verdict)
+            items.append(("Gate", _readable_priority(verdict), tone))
+            risk_count = len(getattr(gate, "risk_flags", []) or [])
+            items.append(("Risks", str(risk_count), "bad" if risk_count >= 3 else "warn" if risk_count else "good"))
 
     return items
+
+
+def _gate_tone(verdict: str) -> str:
+    return {
+        "approved": "good",
+        "needs_edit": "warn",
+        "needs_more_research": "warn",
+        "do_not_send_yet": "bad",
+    }.get(verdict or "", "")
+
+
+def _priority_tone(priority: str) -> str:
+    return {
+        "high_priority": "good",
+        "review": "warn",
+        "needs_more_research": "warn",
+        "do_not_send_yet": "bad",
+    }.get(priority or "", "")
+
+
+def _readable_priority(priority: str) -> str:
+    return (priority or "").replace("_", " ").title() or "—"
 
 
 # ---------------------------------------------------------------------------
 # Tab renderers
 # ---------------------------------------------------------------------------
+def _render_report_tab(tenant: TenantConfig, state: dict, company: str) -> None:
+    report_markdown = build_account_report_markdown(state, tenant)
+    C.report_panel(state, tenant)
+    st.download_button(
+        "Download Markdown report",
+        data=report_markdown,
+        file_name=build_report_filename(company),
+        mime="text/markdown",
+        use_container_width=True,
+    )
+
+
 def _render_sequence_tab(card: Any) -> None:
     sequence = getattr(card, "sequence", None) if card else None
     if not sequence or not sequence.touches:
@@ -271,11 +420,15 @@ def _render_research_tab(enrichment: Any) -> None:
         C.empty_state("🔍", "No enrichment", "Run the pipeline to gather research.")
         return
 
+    evidence = getattr(enrichment, "evidence_cards", []) or []
+    C.section_title("Evidence-backed research")
+    C.evidence_cards_grid(evidence)
+
     summary = getattr(enrichment, "research_summary", "") or ""
     if summary:
         C.section_title("Research summary")
         st.markdown(
-            f'<div class="rationale-card"><div class="rationale-body">{summary}</div></div>',
+            f'<div class="rationale-card"><div class="rationale-body">{escape(summary)}</div></div>',
             unsafe_allow_html=True,
         )
 

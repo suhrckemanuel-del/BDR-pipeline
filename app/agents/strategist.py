@@ -52,6 +52,13 @@ def _build_system_prompt(tenant: TenantConfig) -> str:
         "grounded in the enrichment data — cite the actual signal, ICP score "
         "component, or technographic mention that drove your pick. No generic "
         "platitudes.\n\n"
+        "Use evidence cards as the strongest grounding layer. Prefer observed, "
+        "high-confidence cards for rationale and pain_signal. If the evidence is "
+        "thin, say that plainly instead of stretching a claim.\n\n"
+        "Use the account-readiness score as a transparent prioritization aid, "
+        "not as a perfect truth or reply-rate predictor. If the priority is "
+        "needs_more_research or do_not_send_yet, be cautious and avoid "
+        "over-specific claims.\n\n"
         "The pain_signal and cpo_hypothesis you produce will feed the email writer. "
         "Write them so a human reader of the resulting email would say 'yes, that's "
         "us' — falsifiable, not boilerplate.\n\n"
@@ -59,8 +66,72 @@ def _build_system_prompt(tenant: TenantConfig) -> str:
     )
 
 
+def _format_account_score(e: EnrichmentResult) -> str:
+    account_score = getattr(e, "account_score", None)
+    if not account_score:
+        return ""
+
+    components = [
+        getattr(account_score, "icp_fit", None),
+        getattr(account_score, "pain_evidence", None),
+        getattr(account_score, "trigger_strength", None),
+        getattr(account_score, "contact_confidence", None),
+        getattr(account_score, "evidence_quality", None),
+    ]
+    component_lines = [
+        f"  - {getattr(c, 'label', '')}: {getattr(c, 'score', 0)}/5 — {getattr(c, 'rationale', '')}"
+        for c in components
+        if c is not None
+    ]
+    warnings = getattr(account_score, "warnings", []) or []
+    warning_block = "\nWarnings:\n" + "\n".join(f"  - {w}" for w in warnings) if warnings else ""
+    return (
+        "Transparent account-readiness score:\n"
+        f"  Overall: {account_score.overall_score}/100\n"
+        f"  Priority: {account_score.priority_label}\n"
+        f"  Recommended action: {account_score.recommended_action}\n"
+        "Components:\n"
+        + "\n".join(component_lines)
+        + warning_block
+    )
+
+
+def _format_evidence_cards(e: EnrichmentResult) -> str:
+    cards = getattr(e, "evidence_cards", []) or []
+    if not cards:
+        return ""
+
+    def sort_key(card: object) -> tuple[int, int]:
+        label_rank = {"high": 0, "medium": 1, "low": 2}
+        support_rank = {"observed": 0, "derived": 1, "inferred": 2}
+        return (
+            label_rank.get(getattr(card, "confidence_label", "low"), 3),
+            support_rank.get(getattr(card, "support_type", "inferred"), 3),
+        )
+
+    lines: list[str] = []
+    for card in sorted(cards, key=sort_key)[:6]:
+        source = getattr(card, "source_title", "") or getattr(card, "source_type", "source")
+        claim = getattr(card, "claim", "") or ""
+        excerpt = getattr(card, "excerpt", "") or ""
+        url = getattr(card, "source_url", "") or ""
+        lines.append(
+            f"  - [{getattr(card, 'confidence_label', 'low')}/"
+            f"{getattr(card, 'support_type', 'inferred')}] {claim}\n"
+            f"    Source: {source}{f' ({url})' if url else ''}\n"
+            f"    Excerpt: {excerpt or '(none)'}"
+        )
+    return "Evidence cards:\n" + "\n".join(lines)
+
+
 def _format_enrichment(e: EnrichmentResult) -> str:
     parts: list[str] = []
+    account_score = _format_account_score(e)
+    if account_score:
+        parts.append(account_score)
+    evidence = _format_evidence_cards(e)
+    if evidence:
+        parts.append(evidence)
     if e.icp:
         score_detail = ""
         if e.icp.score_breakdown:
@@ -138,7 +209,10 @@ def run_strategist(state: BDRState) -> dict:
         f"Enrichment data:\n{_format_enrichment(enrichment)}\n\n"
         f"Available angles:\n{angle_menu}\n\n"
         "Pick the single best-fit angle and fill in the StrategyDecision schema. "
-        "Reference the most specific signal from the enrichment data in your rationale."
+        "Reference the most specific evidence card or signal from the enrichment data "
+        "in your rationale. Do not overstate low-confidence or derived evidence. "
+        "If the account-readiness priority is needs_more_research or do_not_send_yet, "
+        "state the uncertainty instead of forcing a strong outreach claim."
     )
 
     try:

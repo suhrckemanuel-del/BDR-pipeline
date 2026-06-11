@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AI BDR Pipeline Architecture</title>
+  <style>
+    body {
+      margin: 0;
+      background: #f7f4ee;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      color: #172033;
+    }
+
+    .wrap {
+      box-sizing: border-box;
+      width: 1440px;
+      min-height: 900px;
+      padding: 70px 80px;
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: 42px;
+      line-height: 1.1;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .sub {
+      margin-bottom: 54px;
+      color: #5a6475;
+      font-size: 20px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .card {
+      position: relative;
+      min-height: 150px;
+      padding: 26px 24px;
+      border: 1px solid #ded7ca;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 10px 24px rgba(23, 32, 51, .08);
+    }
+
+    .card::after {
+      content: ">";
+      position: absolute;
+      top: 58px;
+      right: -24px;
+      color: #2f6feb;
+      font-size: 34px;
+      font-weight: 700;
+    }
+
+    .card:nth-child(4)::after,
+    .card:nth-child(8)::after {
+      display: none;
+    }
+
+    .num {
+      display: flex;
+      width: 34px;
+      height: 34px;
+      margin-bottom: 16px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: #2f6feb;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .title {
+      margin-bottom: 10px;
+      font-size: 22px;
+      font-weight: 740;
+    }
+
+    .body {
+      color: #445066;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .footer {
+      margin-top: 50px;
+      padding: 24px 28px;
+      border-left: 5px solid #2f6feb;
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 8px 20px rgba(23, 32, 51, .06);
+      color: #263347;
+      font-size: 20px;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>AI BDR Pipeline Architecture</h1>
+    <div class="sub">Company input to researched outreach, with live data, tenant-specific strategy, quality critique, and human approval.</div>
+
+    <section class="flow">
+      <div class="card">
+        <div class="num">1</div>
+        <div class="title">Streamlit UI</div>
+        <div class="body">Tenant selection, company input, optional industry and trigger context.</div>
+      </div>
+      <div class="card">
+        <div class="num">2</div>
+        <div class="title">LangGraph State</div>
+        <div class="body">Shared workflow state moves through each agent stage.</div>
+      </div>
+      <div class="card">
+        <div class="num">3</div>
+        <div class="title">Enrichment</div>
+        <div class="body">Exa signals, Hunter contacts, Claude summary, ICP score.</div>
+      </div>
+      <div class="card">
+        <div class="num">4</div>
+        <div class="title">Strategist</div>
+        <div class="body">Selects one tenant-defined angle based on account evidence.</div>
+      </div>
+      <div class="card">
+        <div class="num">5</div>
+        <div class="title">Humanizer</div>
+        <div class="body">Generates observations and assembles approved copy banks.</div>
+      </div>
+      <div class="card">
+        <div class="num">6</div>
+        <div class="title">Critic</div>
+        <div class="body">Scores pain, proof, CTA clarity, and human voice.</div>
+      </div>
+      <div class="card">
+        <div class="num">7</div>
+        <div class="title">Optional CRM</div>
+        <div class="body">Pushes the final prospect card to Notion when enabled.</div>
+      </div>
+      <div class="card">
+        <div class="num">8</div>
+        <div class="title">Human Review</div>
+        <div class="body">Operator reviews, edits, and decides whether to send.</div>
+      </div>
+    </section>
+
+    <div class="footer">Public-safe framing: workflow prototype and proof artifact, not a claim of reply rate, meetings booked, or revenue generated.</div>
+  </main>
+</body>
+</html>

@@ -114,6 +114,7 @@ def _generate_observations(
     persona: str,
     tenant: TenantConfig,
     trigger_headline: str = "",
+    evidence_context: str = "",
 ) -> HumanizerObservations:
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
@@ -134,12 +135,13 @@ def _generate_observations(
     )
 
     trigger_line = f"\nTop trigger headline (use if specific): {trigger_headline}" if trigger_headline else ""
+    evidence_line = f"\nEvidence context (use only if it directly supports the observation):\n{evidence_context}\n" if evidence_context else ""
 
     user = (
         f"Company: {company}\n"
         f"Industry: {industry or 'unknown'}\n"
         f"Likely persona: {persona}\n"
-        f"Specific pain to anchor: {pain_signal}{trigger_line}\n\n"
+        f"Specific pain to anchor: {pain_signal}{trigger_line}{evidence_line}\n\n"
         f"Research summary (from prior agents):\n{research_summary or '(none)'}\n\n"
         "Produce HumanizerObservations: three one-sentence observations (one per angle) "
         "and the two-paragraph Before/After narrative. Be concrete and specific. "
@@ -166,6 +168,23 @@ def _default_observations(
             + (f" {headline}." if headline else "")
         ),
     )
+
+
+def _format_evidence_context(enrichment: object, limit: int = 3) -> str:
+    cards = getattr(enrichment, "evidence_cards", []) or []
+    usable = [
+        c for c in cards
+        if getattr(c, "support_type", "") == "observed"
+        and getattr(c, "confidence_label", "") in {"high", "medium"}
+    ]
+    lines: list[str] = []
+    for card in usable[:limit]:
+        claim = getattr(card, "claim", "") or ""
+        excerpt = getattr(card, "excerpt", "") or ""
+        source = getattr(card, "source_title", "") or getattr(card, "source_type", "source")
+        if claim or excerpt:
+            lines.append(f"- {claim or excerpt} | Source: {source}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +410,7 @@ def run_humanizer(state: BDRState) -> dict:
         persona=strategy.cpo_hypothesis,
         tenant=tenant,
         trigger_headline=trigger_headline,
+        evidence_context=_format_evidence_context(enrichment),
     )
 
     trace.append("Humanizer: assembling DMs + emails via tenant copy banks")

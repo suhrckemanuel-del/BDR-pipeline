@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 from copy import deepcopy
+from typing import Literal
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -74,11 +75,44 @@ class SequenceCritique(BaseModel):
     critique_summary: str
 
 
+class RiskFlag(BaseModel):
+    risk_type: Literal[
+        "unsupported_claim",
+        "overclaiming",
+        "generic_copy",
+        "weak_personalization",
+        "wrong_person_risk",
+        "thin_evidence",
+        "contact_confidence",
+        "deliverability_language",
+        "unclear_cta",
+        "tone_issue",
+    ]
+    severity: Literal["low", "medium", "high"]
+    touch_number: int | None = None
+    text_excerpt: str = ""
+    rationale: str = ""
+    recommended_fix: str = ""
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class QualityGate(BaseModel):
+    verdict: Literal["approved", "needs_edit", "needs_more_research", "do_not_send_yet"]
+    safe_to_send: bool
+    confidence: Literal["high", "medium", "low"]
+    summary: str
+    required_edits: list[str] = Field(default_factory=list)
+    risk_flags: list[RiskFlag] = Field(default_factory=list)
+    unsupported_claim_count: int = Field(default=0, ge=0)
+    evidence_coverage_note: str = ""
+
+
 class CriticResult(BaseModel):
     touch_scores: list[TouchScore] = Field(default_factory=list)
     overall_quality: float = 0.0
     rewrites_applied: int = 0
     critique_summary: str = ""
+    quality_gate: QualityGate | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +157,32 @@ def _build_critic_system(tenant: TenantConfig) -> str:
     )
 
 
+def _build_quality_gate_system(tenant: TenantConfig) -> str:
+    return (
+        f"You are the Quality + Risk Gate for a founder-safe AI BDR workflow for {tenant.brand.name}.\n\n"
+        f"Product context: {tenant.business.description.strip()}\n"
+        f"Target persona: {tenant.persona.title}\n\n"
+        "You evaluate whether the sequence is safe and evidence-backed enough for a human founder to review.\n\n"
+        "Assess copy quality and risk:\n"
+        "  - Is each specific company claim supported by the evidence cards?\n"
+        "  - Is the copy overclaiming outcomes, reply rates, revenue, meetings, or certainty?\n"
+        "  - Is personalization more specific than the evidence allows?\n"
+        "  - Is recipient/contact confidence weak?\n"
+        "  - Is the account-readiness score low enough to require more research?\n"
+        "  - Is the CTA clear and low-friction?\n"
+        "  - Does the language feel spammy or AI-generated?\n\n"
+        "Rules:\n"
+        "  - Evidence cards are the only allowed support set. Do not invent evidence.\n"
+        "  - If a claim is plausible but not sourced, flag it as unsupported or inferred.\n"
+        "  - If evidence is thin, use needs_more_research or needs_edit.\n"
+        "  - If account_score.priority_label is do_not_send_yet, the verdict should normally be do_not_send_yet.\n"
+        "  - If account_score.priority_label is needs_more_research, do not return approved unless risks are clearly low.\n"
+        "  - Do not claim the gate guarantees deliverability, reply quality, or safety for auto-send.\n"
+        "  - Human review is still required before sending.\n\n"
+        "Return a QualityGate. Keep the summary and fixes concise, specific, and founder-friendly."
+    )
+
+
 def _build_rewriter_system(tenant: TenantConfig) -> str:
     return (
         f"You are a B2B cold-email rewriter for {tenant.brand.name}.\n\n"
@@ -141,6 +201,8 @@ def _build_rewriter_system(tenant: TenantConfig) -> str:
         "    revolutionize, streamline, empower, ecosystem, unlock, cutting-edge,\n"
         "    holistic, innovative, synergy, paradigm, robust, scalable, world-class,\n"
         "    game-changing.\n"
+        "  - Do not add facts that are not present in the evidence context.\n"
+        "  - If evidence is thin or unsupported, make the paragraph more cautious and less specific.\n"
         "  - Be direct and concrete — name an actual product, market, workflow, or pain.\n"
         "  - Output ONLY the replacement paragraph text. No preamble, no explanation,\n"
         "    no quotation marks around the output."
@@ -175,12 +237,82 @@ DIMENSION_INSTRUCTIONS = {
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_critic_human_message(touches: list[SequenceTouch], company: str) -> str:
-    lines: list[str] = [
-        f"Company: {company}",
-        f"Sequence has {len(touches)} touches.",
-        "",
-    ]
+def _evidence_sort_key(card: object) -> tuple[int, int, int, int]:
+    support_rank = {"observed": 0, "derived": 1, "inferred": 2}
+    confidence_rank = {"high": 0, "medium": 1, "low": 2}
+    source_rank = {"live_signal": 0, "job_signal": 1, "contact": 2, "manual_trigger": 3, "icp_score": 4}
+    return (
+        0 if getattr(card, "safe_to_use", False) else 1,
+        support_rank.get(getattr(card, "support_type", "inferred"), 3),
+        confidence_rank.get(getattr(card, "confidence_label", "low"), 3),
+        source_rank.get(getattr(card, "source_type", ""), 5),
+    )
+
+
+def _format_evidence_context(enrichment: object | None, limit: int = 8) -> str:
+    cards = getattr(enrichment, "evidence_cards", []) if enrichment else []
+    if not cards:
+        return "Evidence cards: (none)"
+
+    lines = ["Evidence cards:"]
+    for card in sorted(cards, key=_evidence_sort_key)[:limit]:
+        lines.append(
+            f"- {getattr(card, 'evidence_id', '')} | "
+            f"{getattr(card, 'source_type', '')}/{getattr(card, 'support_type', '')}/"
+            f"{getattr(card, 'confidence_label', '')} | "
+            f"safe_to_use={getattr(card, 'safe_to_use', False)}\n"
+            f"  Claim: {getattr(card, 'claim', '')}\n"
+            f"  Excerpt: {getattr(card, 'excerpt', '')}"
+        )
+    return "\n".join(lines)
+
+
+def _format_account_score_context(enrichment: object | None) -> str:
+    score = getattr(enrichment, "account_score", None) if enrichment else None
+    if not score:
+        return "Account-readiness score: (none)"
+    warnings = getattr(score, "warnings", []) or []
+    return (
+        "Account-readiness score:\n"
+        f"- overall_score: {getattr(score, 'overall_score', 0)}/100\n"
+        f"- priority_label: {getattr(score, 'priority_label', '')}\n"
+        f"- recommended_action: {getattr(score, 'recommended_action', '')}\n"
+        f"- warnings: {', '.join(warnings) if warnings else '(none)'}"
+    )
+
+
+def _format_contact_context(enrichment: object | None) -> str:
+    contacts = getattr(enrichment, "contacts", []) if enrichment else []
+    if not contacts:
+        return "Contacts: (none)"
+    lines = ["Contacts:"]
+    for contact in contacts[:6]:
+        lines.append(
+            f"- {getattr(contact, 'name', '') or '(unknown)'} | "
+            f"title={getattr(contact, 'position', '') or '(unknown)'} | "
+            f"email_present={bool(getattr(contact, 'email', ''))} | "
+            f"confidence={getattr(contact, 'confidence', 0)} | "
+            f"seniority={getattr(contact, 'seniority', '') or '(unknown)'}"
+        )
+    return "\n".join(lines)
+
+
+def _format_touch_score_context(touch_scores: list[TouchScore]) -> str:
+    if not touch_scores:
+        return "Touch scores: (none)"
+    lines = ["Touch scores:"]
+    for score in touch_scores:
+        lines.append(
+            f"- T{score.touch_number}: avg={score.average:.1f}, "
+            f"pain={score.pain_specificity}, proof={score.proof_relevance}, "
+            f"cta={score.cta_clarity}, voice={score.human_voice}, "
+            f"failing={','.join(score.failing_dims) or '(none)'}"
+        )
+    return "\n".join(lines)
+
+
+def _sequence_block(touches: list[SequenceTouch]) -> str:
+    lines: list[str] = []
     for touch in touches:
         lines.append(f"--- Touch {touch.touch_number} | Day {touch.day} | Channel: {touch.channel} ---")
         if touch.subject:
@@ -189,11 +321,119 @@ def _build_critic_human_message(touches: list[SequenceTouch], company: str) -> s
         if touch.cta:
             lines.append(f"CTA: {touch.cta}")
         lines.append("")
+    return "\n".join(lines)
+
+
+def _build_critic_human_message(
+    touches: list[SequenceTouch],
+    company: str,
+    evidence_context: str = "",
+) -> str:
+    lines: list[str] = [
+        f"Company: {company}",
+        f"Sequence has {len(touches)} touches.",
+        "",
+    ]
+    if evidence_context:
+        lines.append(evidence_context)
+        lines.append("")
+    lines.append(_sequence_block(touches))
     lines.append(
         "Score every touch and return a SequenceCritique with touch_scores, "
         "overall_quality, and critique_summary."
     )
     return "\n".join(lines)
+
+
+def _build_quality_gate_human_message(
+    touches: list[SequenceTouch],
+    company: str,
+    enrichment: object | None,
+    critique: SequenceCritique,
+    evidence_context: str,
+) -> str:
+    return "\n".join(
+        [
+            f"Company: {company}",
+            _format_account_score_context(enrichment),
+            _format_contact_context(enrichment),
+            evidence_context,
+            _format_touch_score_context(critique.touch_scores),
+            f"Overall copy quality: {critique.overall_quality:.1f}/5",
+            f"Critique summary: {critique.critique_summary}",
+            "",
+            "Sequence:",
+            _sequence_block(touches),
+            "",
+            "Return a QualityGate verdict for human review. Do not approve unsupported claims.",
+        ]
+    )
+
+
+def _fallback_quality_gate(
+    enrichment: object | None,
+    critique: SequenceCritique | None,
+    reason: str = "",
+) -> QualityGate:
+    account_score = getattr(enrichment, "account_score", None) if enrichment else None
+    priority = getattr(account_score, "priority_label", "") if account_score else ""
+    account_warnings = list(getattr(account_score, "warnings", []) or []) if account_score else []
+    touch_scores = getattr(critique, "touch_scores", []) if critique else []
+    low_copy = bool(getattr(critique, "overall_quality", 0.0) and getattr(critique, "overall_quality", 0.0) < 3.0)
+
+    risk_flags: list[RiskFlag] = []
+    if any("No contacts" in warning for warning in account_warnings):
+        risk_flags.append(
+            RiskFlag(
+                risk_type="contact_confidence",
+                severity="high",
+                rationale="Account scoring found no contacts.",
+                recommended_fix="Run or manually verify contact discovery before sending.",
+            )
+        )
+    if any("Evidence is thin" in warning or "No high-confidence" in warning for warning in account_warnings):
+        risk_flags.append(
+            RiskFlag(
+                risk_type="thin_evidence",
+                severity="high" if priority == "do_not_send_yet" else "medium",
+                rationale="Account scoring found weak or thin source-backed evidence.",
+                recommended_fix="Gather stronger observed evidence before approving outreach.",
+            )
+        )
+    for score in touch_scores:
+        if score.needs_rewrite:
+            risk_flags.append(
+                RiskFlag(
+                    risk_type="generic_copy" if "pain_specificity" in score.failing_dims else "tone_issue",
+                    severity="medium",
+                    touch_number=score.touch_number,
+                    rationale=score.feedback or "Touch failed one or more copy quality dimensions.",
+                    recommended_fix="Edit the touch before review.",
+                )
+            )
+
+    if priority == "do_not_send_yet":
+        verdict = "do_not_send_yet"
+    elif priority == "needs_more_research":
+        verdict = "needs_more_research"
+    elif low_copy or risk_flags:
+        verdict = "needs_edit"
+    else:
+        verdict = "approved"
+
+    return QualityGate(
+        verdict=verdict,  # type: ignore[arg-type]
+        safe_to_send=(verdict == "approved"),
+        confidence="low" if reason else "medium",
+        summary=(
+            f"Fallback quality gate used{f' after {reason}' if reason else ''}. "
+            "Human review is still required before sending."
+        ),
+        required_edits=account_warnings[:4],
+        risk_flags=risk_flags[:8],
+        unsupported_claim_count=0,
+        evidence_coverage_note="Fallback gate did not validate claim-level evidence coverage.",
+    )
 
 
 def _build_rewriter_human_message(
@@ -203,6 +443,7 @@ def _build_rewriter_human_message(
     touch_number: int,
     dimension: str = "",
     critique: str = "",
+    evidence_context: str = "",
 ) -> str:
     instruction = DIMENSION_INSTRUCTIONS.get(dimension, "")
     dim_block = ""
@@ -217,6 +458,7 @@ def _build_rewriter_human_message(
         f"Touch number: {touch_number}\n"
         f"Quality score: {score.average:.1f}/5\n"
         f"{dim_block}\n"
+        f"Allowed evidence context:\n{evidence_context or '(no evidence cards available)'}\n\n"
         f"Original first paragraph:\n{first_para}\n\n"
         "Write a replacement first paragraph only."
     )
@@ -266,6 +508,8 @@ def run_critic(state: BDRState) -> dict:
             return {"agent_trace": trace}
 
         company: str = state.get("company") or ""
+        enrichment = state.get("enrichment")
+        evidence_context = _format_evidence_context(enrichment)
 
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
@@ -280,7 +524,7 @@ def run_critic(state: BDRState) -> dict:
         )
         critic_llm = llm.with_structured_output(SequenceCritique)
 
-        human_msg = _build_critic_human_message(touches, company)
+        human_msg = _build_critic_human_message(touches, company, evidence_context=evidence_context)
         try:
             critique: SequenceCritique = critic_llm.invoke(
                 [SystemMessage(content=_build_critic_system(tenant)), HumanMessage(content=human_msg)]
@@ -295,6 +539,7 @@ def run_critic(state: BDRState) -> dict:
                 "critic_result": CriticResult(
                     overall_quality=0.0,
                     rewrites_applied=0,
+                    quality_gate=_fallback_quality_gate(enrichment, None, reason=type(score_exc).__name__),
                     critique_summary="Critic skipped — scoring call failed.",
                 ),
                 "agent_trace": trace,
@@ -304,10 +549,38 @@ def run_critic(state: BDRState) -> dict:
         avg = critique.overall_quality
         trace.append(f"Critic: scored {n_touches} touches (avg: {avg:.1f})")
 
+        gate_llm = llm.with_structured_output(QualityGate)
+        gate_human_msg = _build_quality_gate_human_message(
+            touches=touches,
+            company=company,
+            enrichment=enrichment,
+            critique=critique,
+            evidence_context=evidence_context,
+        )
+        try:
+            quality_gate: QualityGate = gate_llm.invoke(
+                [
+                    SystemMessage(content=_build_quality_gate_system(tenant)),
+                    HumanMessage(content=gate_human_msg),
+                ]
+            )
+        except Exception as gate_exc:  # noqa: BLE001
+            logger.warning("Critic: quality gate call failed (%s) â€” using fallback", gate_exc)
+            quality_gate = _fallback_quality_gate(enrichment, critique, reason=type(gate_exc).__name__)
+
+        trace.append(
+            f"Critic: quality gate verdict {quality_gate.verdict} · "
+            f"{len(quality_gate.risk_flags)} risk flags"
+        )
+        trace.append(f"Critic: unsupported claims flagged: {quality_gate.unsupported_claim_count}")
+
         rewrites_applied = 0
         touches_needing_rewrite = [ts for ts in critique.touch_scores if ts.needs_rewrite]
 
-        if touches_needing_rewrite:
+        if quality_gate.verdict == "do_not_send_yet":
+            updated_card = card
+            trace.append("Critic: do_not_send_yet verdict â€” skipping rewrite-to-approve behavior")
+        elif touches_needing_rewrite:
             updated_card = deepcopy(card)
             touch_map: dict[int, SequenceTouch] = {
                 t.touch_number: t for t in updated_card.sequence.touches
@@ -351,6 +624,7 @@ def run_critic(state: BDRState) -> dict:
                             touch_number=touch.touch_number,
                             dimension=dim,
                             critique=dim_critique,
+                            evidence_context=evidence_context,
                         )
                         try:
                             response = rewriter_llm.invoke(
@@ -395,6 +669,7 @@ def run_critic(state: BDRState) -> dict:
             overall_quality=critique.overall_quality,
             rewrites_applied=rewrites_applied,
             critique_summary=critique.critique_summary,
+            quality_gate=quality_gate,
         )
 
         return {

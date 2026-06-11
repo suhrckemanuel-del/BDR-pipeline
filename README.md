@@ -1,182 +1,302 @@
 # BDR Pipeline
 
-A white-label, agentic BDR (Business Development Representative) pipeline. Point it at a company name and it produces a full 5-touch outreach sequence — researched, positioned, drafted, and quality-graded — for the tenant you have configured.
+Founder-safe AI BDR workflow for sourced, scored, human-approved outreach.
 
-Built on **LangGraph**, **Claude**, and **Streamlit**. Tenant-driven: all positioning, ICP, angles, and copy banks live in `tenants/<slug>/` config files, not in code.
+> I built a multi-agent BDR workflow that researches accounts, finds contacts, scores fit and timing, generates outreach, critiques quality and risk, and keeps a human in the approval loop.
 
-> _Screenshot placeholder — `docs/screenshot.png`_
+This is a portfolio-grade workflow prototype, not an autonomous sending tool and not a revenue case study. Demo companies are anonymized/synthetic examples unless explicitly documented otherwise.
 
----
+## Problem
 
-## 30-second tour
+Founder-led outbound often breaks in the messy middle: research is thin, personalization is hard to verify, drafts drift into generic AI copy, and founders still need to approve anything that represents the company.
 
+This project packages that workflow into a Streamlit + LangGraph app that separates evidence from inference, scores account readiness, drafts a cautious sequence, and makes the approval decision explicit.
+
+## What The App Does
+
+The app takes a target account and produces a founder-readable outbound package:
+
+- research/enrichment with evidence cards
+- contact discovery when data is available
+- fit, pain, and trigger account-readiness scoring
+- a strategist-selected outreach angle
+- a humanized multi-touch outreach sequence
+- a quality/risk gate that can say `approved`, `needs_edit`, `needs_more_research`, or `do_not_send_yet`
+- a report tab with a downloadable Markdown account report
+
+No auto-send is built into the app flow.
+
+## Demo Workflow
+
+1. Select the `demo` tenant.
+2. Pick a demo prospect from the sidebar or choose `Custom account`.
+3. Run the pipeline.
+4. Review the Report tab first.
+5. Inspect evidence cards, score components, contacts, sequence, and quality gate.
+6. Download the Markdown report for human review.
+
+Detailed walkthrough: [docs/demo-guide.md](docs/demo-guide.md)
+
+Demo prospects live at [tenants/demo/data/prospects.csv](tenants/demo/data/prospects.csv). They are anonymized/synthetic portfolio examples. No reply or meeting metrics are claimed.
+
+## Workflow Diagram
+
+```mermaid
+flowchart LR
+  A["Target account"] --> B["Research / enrichment"]
+  B --> C["Evidence cards"]
+  C --> D["Fit + pain + trigger score"]
+  D --> E["Strategist angle"]
+  E --> F["Humanized sequence"]
+  F --> G["Quality / risk gate"]
+  G --> H["Founder-readable report"]
+  H --> I["Human approval"]
 ```
-   Company name
-        │
-        ▼
-┌──────────────────┐
-│ 1. Enrichment    │  Exa live signals + Hunter.io contacts +
-│                  │  Claude research summary + ICP tier
-└──────────────────┘
-        │
-        ▼
-┌──────────────────┐
-│ 2. Strategist    │  Claude picks 1 of 3 tenant-defined angles
-│                  │  (structured output)
-└──────────────────┘
-        │
-        ▼
-┌──────────────────┐
-│ 3. Humanizer     │  LLM writes observations only; deterministic
-│                  │  assembler glues in fixed-bank proof points
-│                  │  and CTAs. 5-touch sequence built here.
-└──────────────────┘
-        │
-        ▼
-┌──────────────────┐
-│ 4. Critic        │  Claude scores each touch on 4 dimensions
-│                  │  and rewrites the first paragraph of any
-│                  │  failing email touch.
-└──────────────────┘
-        │
-        ▼
-┌──────────────────┐
-│ 5. CRM Sync      │  Optional — push prospect card to Notion.
-└──────────────────┘
+
+## Architecture
+
+```mermaid
+flowchart TD
+  UI["Streamlit UI<br/>app/main.py + app/ui/*"] --> WF["LangGraph workflow<br/>app/agents/workflow_engine.py"]
+  WF --> EN["Enrichment<br/>Exa + Hunter + scoring"]
+  WF --> ST["Strategist<br/>tenant angle selection"]
+  WF --> HU["Humanizer<br/>observations + copy banks"]
+  WF --> CR["Critic<br/>quality/risk gate"]
+  WF --> CRM["Optional CRM sync"]
+  EN --> STATE["BDRState<br/>Pydantic schemas"]
+  ST --> STATE
+  HU --> STATE
+  CR --> STATE
+  STATE --> REP["Report builder<br/>app/services/report_builder.py"]
+  TEN["Tenant config<br/>tenants/demo/*"] --> EN
+  TEN --> ST
+  TEN --> HU
+  TEN --> CR
 ```
 
-The output is a `ProspectCard`: 3 angle drafts (DM + email subject + email body) plus a 5-touch sequence (LinkedIn connect → email → follow-up → social proof → breakup).
+## Core Features
 
----
+- **Evidence-backed research cards**: each key claim is represented as observed, derived, or inferred evidence with confidence and source context.
+- **Account-readiness scoring**: transparent fit, pain, trigger, contact-confidence, and evidence-quality components roll up into a 0-100 account score.
+- **Quality/risk gate**: critic output flags unsupported claims, thin evidence, weak personalization, tone issues, and send-readiness problems.
+- **Account report**: the Report tab packages score, evidence, contact recommendation, sequence, risk flags, and manual approval checklist into Markdown.
+- **Demo presets**: the demo tenant can load preset accounts from [tenants/demo/data/prospects.csv](tenants/demo/data/prospects.csv), while custom input still works.
+- **Result persistence**: completed Streamlit results stay visible across harmless reruns such as report download clicks.
+- **Eval metrics**: [scripts/run_demo_eval.py](scripts/run_demo_eval.py) generates internal workflow-quality metrics, not campaign-performance claims.
 
-## Quickstart
+## Screenshots
+
+| Step | Screenshot |
+|---|---|
+| Input and tenant selection | ![Streamlit input](docs/screenshots/01-streamlit-input.png) |
+| Research signals | ![Research signals](docs/screenshots/02-research-signals.png) |
+| Contact discovery | ![Contact discovery](docs/screenshots/03-contact-discovery.png) |
+| Positioning angles | ![Positioning angles](docs/screenshots/04-positioning-angles.png) |
+| Outreach sequence | ![Outreach sequence](docs/screenshots/05-outreach-sequence.png) |
+| Critic quality pass | ![Critic quality pass](docs/screenshots/06-critic-quality-pass.png) |
+| Final report/output | ![Final output](docs/screenshots/07-final-output-or-report.png) |
+| Architecture diagram | ![Architecture diagram](docs/screenshots/08-architecture-diagram.png) |
+
+HD screenshots are also available under [docs/screenshots-hd/](docs/screenshots-hd/).
+
+## Demo Video
+
+Available local demo videos:
+
+- [docs/bdr-pipeline-demo-v4-polished.mp4](docs/bdr-pipeline-demo-v4-polished.mp4)
+- [docs/bdr-pipeline-demo-v3-synced-compressed.mp4](docs/bdr-pipeline-demo-v3-synced-compressed.mp4)
+- [docs/bdr-pipeline-demo-v2.mp4](docs/bdr-pipeline-demo-v2.mp4)
+
+Use the latest polished video unless you need older versions for comparison.
+
+## Setup
 
 ```bash
 git clone https://github.com/suhrckemanuel-del/BDR-pipeline.git
 cd BDR-pipeline
 
 python -m venv .venv
-source .venv/bin/activate           # Windows: .venv\Scripts\activate
-
+source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# fill in ANTHROPIC_API_KEY, EXA_API_KEY, HUNTER_API_KEY (the rest are optional)
+```
 
+On Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+Fill `.env` with your own keys. Do not commit `.env`.
+
+## Environment Variables
+
+Required for the full live pipeline:
+
+| Variable | Purpose |
+|---|---|
+| `ANTHROPIC_API_KEY` | LLM calls for enrichment synthesis, strategy, humanizer, and critic. |
+| `EXA_API_KEY` | Live web/news/job signal enrichment. |
+| `HUNTER_API_KEY` | Contact discovery by company domain. |
+
+Optional:
+
+| Variable | Purpose |
+|---|---|
+| `NOTION_API_KEY` | Optional CRM sync if enabled for a tenant. |
+| `NOTION_DATABASE_ID` | Optional Notion database target. |
+| `GMAIL_SENDER` | Optional send script sender account. |
+| `GMAIL_APP_PASSWORD` | Optional Gmail app password for the send script. |
+| `BDR_TENANT` | Pins the active tenant, e.g. `demo`. |
+| `LANGCHAIN_API_KEY` | Optional tracing. |
+
+See [.env.example](.env.example) for the canonical list. Never expose real key values in docs, screenshots, or demos.
+
+## Run Streamlit
+
+```bash
 streamlit run app/main.py
 ```
 
-The UI opens at `http://localhost:8501`. The sidebar dropdown lets you pick a tenant; the bundled `demo` tenant (Acme Analytics, fictional B2B SaaS) is selected by default.
+Use a specific port:
 
-To pin a tenant for scripted runs:
+```bash
+streamlit run app/main.py --server.port 8503 --server.headless true
+```
+
+Pin the demo tenant:
 
 ```bash
 BDR_TENANT=demo streamlit run app/main.py
 ```
 
----
+On PowerShell:
 
-## Configure your own tenant
+```powershell
+$env:BDR_TENANT="demo"
+streamlit run app/main.py
+```
 
-A **tenant** is one positioning of the pipeline: a product, an ICP, three outreach angles, brand strings, and a sender identity. To add yours:
+## Run Eval Metrics
 
-**Option A — Interactive wizard (recommended):**
+Default offline/sample-state mode:
 
 ```bash
-python scripts/onboard_tenant.py
+python scripts/run_demo_eval.py
 ```
 
-The wizard asks you 8 questions, then has Claude draft a complete tenant skeleton (`config.yaml`, `icp.txt`, `angles.json`, `copy.json`). ~3 minutes for a working draft.
-
-**Option B — Copy and edit by hand:**
+Optional live workflow mode:
 
 ```bash
-cp -r tenants/demo tenants/my-tenant
-python scripts/check_tenant.py my-tenant   # validate
+python scripts/run_demo_eval.py --mode live --max-accounts 2
 ```
 
-Full schema reference and field-by-field walkthrough: [`tenants/README.md`](tenants/README.md).
+Outputs:
 
----
+- [docs/evals.md](docs/evals.md)
+- [docs/eval-results.csv](docs/eval-results.csv)
+- [docs/eval-results.json](docs/eval-results.json)
 
-## Architecture
+These are internal workflow metrics: completion, runtime, evidence count, high-confidence evidence, contact count, score, gate verdict, risk flags, unsupported claim count, and report generation status. They do not measure replies, meetings, revenue, or campaign lift.
 
-```
-app/
-  main.py                 # Streamlit dashboard — tenant dropdown + run UI
-  agents/
-    state.py              # BDRState TypedDict + Pydantic schemas
-    workflow_engine.py    # LangGraph DAG (5 linear nodes)
-    enrichment.py         # Exa + Hunter + ICP classification
-    strategist.py         # Claude picks 1 of 3 angles
-    humanizer.py          # Observations + deterministic copy assembly
-    critic.py             # 4-dim LLM scoring + per-touch rewrites
-  services/
-    crm_sync.py           # Notion push (schema-agnostic)
-    gmail_sender.py       # Outbound queue (per-tenant)
-    humanizer_rules.py    # 29-rule anti-AI text filter
-  tenants/
-    schema.py             # Pydantic v2 TenantConfig (extra="forbid")
-    loader.py             # load_tenant() — cached, validates on read
+## Example Output
 
-tenants/
-  demo/                   # Bundled example tenant (Acme Analytics)
-    config.yaml
-    icp.txt
-    angles.json
-    copy.json
-    data/prospects.csv
+The Report tab generates a Markdown account report named like:
 
-scripts/
-  onboard_tenant.py       # Claude-assisted tenant wizard
-  check_tenant.py         # Validate one or all tenants
-  send_via_gmail.py       # Send a tenant's queued sequences (--dry-run supported)
+```text
+bdr-account-report-globex-industries.md
 ```
 
-### The anti-AI copy pattern
+Report sections include:
 
-LLMs sound like LLMs. We work around this by letting Claude generate **only observations** (3 specific things it noticed about the prospect, plus a Before/After narrative) and then having a **deterministic assembler** glue those observations into emails using human-written **fixed copy banks** — proof points, CTAs, subject lines, follow-ups, breakups, all 33 strings per angle, all reviewed by you.
+- metadata and manual-review notice
+- decision summary
+- score and priority
+- evidence highlights
+- recommended contact or "No verified contact found"
+- outreach recommendation
+- quality/risk gate
+- human approval checklist
+- limitations
 
-The same prospect always picks the same variant from each bank (hash-based), so reruns are stable.
+The report is assembled deterministically from pipeline state by [app/services/report_builder.py](app/services/report_builder.py). It does not add a separate "make it pretty" LLM call.
 
-A final 29-rule regex filter strips residual LLM tells (`actually,`, `transformative`, `leverage`, etc.) on the way out.
+## Honest Metrics
 
----
+Latest generated eval summary: [docs/evals.md](docs/evals.md)
 
-## Environment variables
+Current sample eval output reports internal workflow checks only. It answers questions like:
 
-| Variable | Required | Purpose |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | yes | Claude API — used by every agent |
-| `EXA_API_KEY` | yes | Live signals (news, jobs). Pipeline still runs without it, with fewer signals. |
-| `HUNTER_API_KEY` | yes | Contact discovery on the prospect's domain. Pipeline still runs without it. |
-| `NOTION_API_KEY` | optional | Required only if `crm.enabled: true` in a tenant config. |
-| `NOTION_DATABASE_ID` | optional | Default Notion database. Per-tenant override available in `config.yaml`. |
-| `GMAIL_SENDER` | optional | Required only for `scripts/send_via_gmail.py`. |
-| `GMAIL_APP_PASSWORD` | optional | Gmail App Password (requires 2FA). |
-| `BDR_TENANT` | optional | Pin a tenant slug. Disables the sidebar dropdown when set. |
-| `LANGCHAIN_API_KEY` | optional | LangSmith tracing. See `.env.example`. |
+- Did the run complete?
+- How many evidence cards were produced?
+- How many high-confidence evidence cards exist?
+- Was a report generated?
+- What did the quality gate decide?
+- How many risk flags or unsupported claims were recorded?
 
-See [`.env.example`](.env.example) for the canonical list.
+It does not prove:
 
----
+- reply-rate lift
+- meetings booked
+- revenue impact
+- deliverability
+- production reliability on real customer data
+
+## Limitations
+
+- Public demo data is anonymized/synthetic.
+- Contact discovery depends on third-party data availability and may return no contacts for demo accounts.
+- Evidence confidence is a workflow signal, not independent fact verification.
+- The system drafts outreach for human review; it does not approve or send autonomously.
+- Live runs depend on API keys, network access, and model/provider availability.
+- No campaign performance metrics are claimed.
+- No private client permission is implied by this repository.
+
+## Portfolio Positioning
+
+This repo is best presented as a practical AI workflow proof artifact for founder-led B2B SaaS outbound.
+
+Strong public claim:
+
+> I built a multi-agent BDR workflow that researches accounts, finds contacts, scores fit and timing, generates outreach, critiques quality and risk, and keeps a human in the approval loop.
+
+Avoid claiming that it generated revenue, improved reply rates, booked meetings, replaces SDRs, sends safely at scale, or is production-ready for unsupervised outbound.
+
+## Documentation
+
+- [docs/handoff.md](docs/handoff.md): start here if another AI or reviewer needs project context.
+- [docs/demo-guide.md](docs/demo-guide.md): how to demo the app and what to say.
+- [docs/roadmap.md](docs/roadmap.md): next polish, product, evaluation, integration, and long-term work.
+- [docs/evals.md](docs/evals.md): latest generated internal eval summary.
+- [docs/portfolio-proof-package.md](docs/portfolio-proof-package.md): older portfolio packaging notes.
+- [tenants/README.md](tenants/README.md): tenant configuration guide.
+
+## Key Files
+
+```text
+app/main.py                         Streamlit entrypoint
+app/ui/layout.py                    Sidebar, result routing, tabs
+app/ui/components.py                UI components
+app/agents/workflow_engine.py       LangGraph orchestration
+app/agents/state.py                 Shared workflow state and schemas
+app/agents/enrichment.py            Research, evidence, contacts, scoring
+app/agents/strategist.py            Angle selection
+app/agents/humanizer.py             Sequence generation
+app/agents/critic.py                Quality/risk gate
+app/services/report_builder.py      Markdown account report
+app/services/demo_eval.py           Eval metrics helpers
+scripts/run_demo_eval.py            Eval CLI
+tenants/demo/                       Demo tenant config and data
+```
 
 ## Roadmap
 
-- **Signal-weighted ICP scoring** — replace 3-tier classification with a 0–100 composite (funding, hiring signals, headcount band, geography, technographics).
-- **Per-tenant model overrides** — let `config.yaml` choose Sonnet vs. Opus per agent.
-- **SQLite persistence** — replace CSV state with a queryable run log.
-- **Multiple sequence variants per tenant** — e.g. founder track vs. enterprise track.
-- **Per-tenant Exa query templates** — let tenants override the default signal queries.
-
----
+See [docs/roadmap.md](docs/roadmap.md). Near-term recommended next build: saved reports/review queue with explicit manual approval state.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
-
----
-
-## Author
-
-Manuel Suhrcke — [github.com/suhrckemanuel-del](https://github.com/suhrckemanuel-del)
+MIT - see [LICENSE](LICENSE).
