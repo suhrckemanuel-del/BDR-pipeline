@@ -1,0 +1,40 @@
+# Keep the build context small: only code, tenant configs, and Streamlit config
+# belong in the image.
+.git
+.claude
+.env
+.env.*
+!.env.example
+
+# Demo media + portfolio assets (~180 MB) — never needed at runtime
+docs/
+portfolio-video/
+
+# Runtime state (recreated inside the container / on the /data volume)
+pipeline/
+exports/
+*.db
+*.sqlite
+*.sqlite3
+tenants/*/data/queued/
+tenants/*/data/saved_states/
+
+# Python cruft
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+tmp_*.png
+tmp_*.html
