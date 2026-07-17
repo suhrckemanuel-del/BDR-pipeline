@@ -130,11 +130,12 @@ def render_batch_view(tenant: TenantConfig) -> None:
         max_rows = len(prospects or []) or 1
         limit = st.number_input("Max prospects", min_value=1, max_value=max(max_rows, 1), value=min(max_rows, 25))
     with col_notion:
+        _provider_label = {"notion": "Notion", "hubspot": "HubSpot"}.get(tenant.crm.provider, "CRM")
         sync_to_notion = st.checkbox(
-            "Sync to Notion",
+            f"Sync to {_provider_label}",
             value=False,
-            disabled=not tenant.crm.enabled or mode != "live",
-            help="Live mode only, and crm.enabled must be true in tenant config.",
+            disabled=not tenant.crm.enabled or tenant.crm.provider == "none" or mode != "live",
+            help="Live mode only; crm.enabled must be true and crm.provider set in tenant config.",
         )
 
     if st.button("▶  Run batch", type="primary", disabled=not prospects):

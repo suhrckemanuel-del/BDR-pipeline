@@ -18,7 +18,7 @@ threaded through BDRState["tenant"] so every agent reads from the same source.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -69,9 +69,20 @@ class CRMConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = Field(default=False, description="Whether to show Notion sync UI for this tenant.")
+    provider: Literal["notion", "hubspot", "none"] = Field(
+        default="notion",
+        description="Which CRM the crm_sync node targets. Default preserves the original Notion behavior.",
+    )
     notion_database_id: Optional[str] = Field(
         default=None,
         description="If set, overrides the NOTION_DATABASE_ID env var for this tenant.",
+    )
+    hubspot_token_env: Optional[str] = Field(
+        default=None,
+        description=(
+            "If set, name of the env var holding this tenant's HubSpot private-app token. "
+            "Falls back to HUBSPOT_ACCESS_TOKEN. Never put the token itself in config.yaml."
+        ),
     )
 
 
