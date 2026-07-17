@@ -50,6 +50,7 @@ tmp_*.png
 tmp_*.html
 
 # Generated / runtime artifacts
+exports/
 pipeline/checkpoints.db
 *.db
 *.sqlite

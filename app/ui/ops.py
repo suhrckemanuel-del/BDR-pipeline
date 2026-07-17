@@ -302,6 +302,38 @@ def render_tracker_view(tenant: TenantConfig) -> None:
         st.toast(f"Updated {changed} prospect status(es).")
         st.rerun()
 
+    # Export to sending tool
+    C.section_title("Export to sending tool")
+    col_fmt, col_go = st.columns([2, 2])
+    with col_fmt:
+        export_fmt = st.selectbox(
+            "Format",
+            options=["instantly", "smartlead"],
+            format_func=str.title,
+            key="tracker_export_fmt",
+        )
+    with col_go:
+        # `exported` events log at prepare time — st.download_button has no
+        # on-click callback to log against.
+        if st.button("📤 Prepare export (queued + eval-passed)"):
+            from app.services.sequence_export import export_sequences
+
+            st.session_state["tracker_export"] = export_sequences(tenant.tenant_id, export_fmt)
+    export_result = st.session_state.get("tracker_export")
+    if export_result:
+        if export_result.exported:
+            st.success(f"{len(export_result.exported)} prospect(s) ready — {export_result.fmt.title()} CSV.")
+            st.download_button(
+                f"Download {export_result.fmt}.csv",
+                data=export_result.csv_text,
+                file_name=f"{tenant.tenant_id}_{export_result.fmt}.csv",
+                mime="text/csv",
+            )
+        else:
+            st.info("No eligible prospects (need status=queued and a passing latest eval run).")
+        for company, reason in export_result.skipped:
+            st.caption(f"Skipped {company}: {reason}")
+
     # Reply loop
     C.section_title("Reply loop")
     col_btn, col_stats = st.columns([1, 2])
