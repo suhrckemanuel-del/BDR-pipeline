@@ -120,11 +120,12 @@ def render_sidebar(
             key="ui_trigger",
         )
 
+        _provider_label = {"notion": "Notion", "hubspot": "HubSpot"}.get(tenant.crm.provider, "CRM")
         sync_to_notion = st.checkbox(
-            "Sync to Notion",
-            value=tenant.crm.enabled,
-            disabled=not tenant.crm.enabled,
-            help="Set crm.enabled: true in tenant config.yaml to enable.",
+            f"Sync to {_provider_label}",
+            value=tenant.crm.enabled and tenant.crm.provider != "none",
+            disabled=not tenant.crm.enabled or tenant.crm.provider == "none",
+            help="Set crm.enabled: true and crm.provider (notion/hubspot) in tenant config.yaml to enable.",
         )
 
         run_clicked = st.button(
@@ -300,10 +301,15 @@ def render_main(tenant: TenantConfig, state: dict) -> None:
 
     # CRM sync footer
     if crm_result and not getattr(crm_result, "skipped", False):
+        _provider = getattr(crm_result, "provider", "") or "notion"
+        _provider_label = {"notion": "Notion", "hubspot": "HubSpot"}.get(_provider, "CRM")
         if getattr(crm_result, "success", False):
-            st.success(f"Synced to Notion: {crm_result.page_url}")
+            if getattr(crm_result, "page_url", ""):
+                st.success(f"Synced to {_provider_label}: {crm_result.page_url}")
+            else:
+                st.success(f"Synced to {_provider_label} (company id: {crm_result.page_id})")
         elif getattr(crm_result, "error", ""):
-            st.warning(f"Notion sync failed: {crm_result.error}")
+            st.warning(f"{_provider_label} sync failed: {crm_result.error}")
 
 
 # ---------------------------------------------------------------------------
