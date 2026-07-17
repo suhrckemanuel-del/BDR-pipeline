@@ -59,7 +59,9 @@ app/
     humanizer.py                # LLM observations + deterministic copy assembly + 5-touch sequence
     critic.py                   # 4-dim LLM scoring + per-touch first-paragraph rewrites
   services/
-    crm_sync.py                 # Notion push (schema-agnostic, per-tenant DB override)
+    crm_sync.py                 # CRM dispatch node (tenant.crm.provider) + Notion push (schema-agnostic)
+    hubspot_sync.py             # HubSpot push: default properties + ProspectCard as an associated Note
+    sequence_export.py          # Instantly/Smartlead CSV export of queued, eval-passed sequences
     gmail_sender.py             # Per-tenant queue at tenants/<id>/data/queued/
     humanizer_rules.py          # 29-rule anti-AI regex filter
     store.py                    # SQLite persistence: runs + prospect tracker + events (pipeline/bdr.db)
@@ -85,12 +87,18 @@ tenants/
     data/prospects.csv          # Pre-researched targets
 
 scripts/
-  onboard_tenant.py             # Interactive Claude-assisted tenant wizard
+  onboard_tenant.py             # Tenant wizard: interactive Q&A or --url <site> (drafts from web content)
   check_tenant.py               # Pydantic-based tenant validator
   send_via_gmail.py             # Send queued sequences for a tenant
   run_batch.py                  # CLI batch runner (--mode sample|live), persists to SQLite
   run_eval.py                   # CI-able eval-gate regression check (exit 1 on blocking failure)
   check_replies.py              # IMAP reply detection for the tracker (--dry-run supported)
+  export_sequences.py           # Export queued+eval-passed sequences to Instantly/Smartlead CSVs
+  check_crm_sync.py             # Offline CRM connector checks (mocked HTTP, exit 1 on failure)
+  check_exports.py              # Offline export checks (scratch BDR_DB_PATH, exit 1 on failure)
+  check_onboarding.py           # Offline --url onboarding checks (mocked fetch + LLM, exit 1 on failure)
+
+Dockerfile / .dockerignore      # Deployable image — see docs/deploy.md (BDR_DB_PATH on a /data volume)
 ```
 
 ---
@@ -122,8 +130,11 @@ Input: company name + industry (+ optional trigger_headline) + active TenantConf
     - No retry loop — in-place rewrites, then forward
   ↓
 [5. CRM Sync]  app/services/crm_sync.py (optional)
-    - If sync_to_notion AND tenant.crm.enabled → push ProspectCard to Notion
-    - tenant.crm.notion_database_id overrides NOTION_DATABASE_ID env var
+    - Dispatches on tenant.crm.provider: notion (default) | hubspot | none
+    - Notion: tenant.crm.notion_database_id overrides NOTION_DATABASE_ID env var
+    - HubSpot: app/services/hubspot_sync.py — token from HUBSPOT_ACCESS_TOKEN
+      (or the env var named by tenant.crm.hubspot_token_env); dry-run via
+      BDR_CRM_DRY_RUN=1; missing creds → skip with message, never crash
   ↓
 Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 ```
@@ -161,7 +172,11 @@ Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 
 **Deterministic variants.** `_variant_index()` hashes (tenant_id + company) to always pick the same proof/CTA variant across reruns. Same prospect → same draft.
 
-**Schema-agnostic Notion sync.** Connector discovers the title property dynamically; works with any Notion DB shape. Per-tenant DB override via `tenant.crm.notion_database_id`.
+**Schema-agnostic CRM sync, provider-dispatched.** `run_crm_sync` dispatches on `tenant.crm.provider` (`notion` default for backward compat, `hubspot`, `none`). The Notion connector discovers the title property dynamically (works with any DB shape; per-tenant override via `tenant.crm.notion_database_id`). The HubSpot connector touches only default portal properties (company name/domain, contact email/name/title) and pushes the full ProspectCard as an associated Note — no custom properties to provision. Tokens never live in config files: `tenant.crm.hubspot_token_env` names an env var, falling back to `HUBSPOT_ACCESS_TOKEN`.
+
+**Sending-tool export, eval-gated.** `sequence_export.py` exports queued prospects to Instantly/Smartlead lead CSVs (per-touch copy as `subject_N`/`body_N`/`day_N` custom columns) — but only when the *latest* run passed the eval gates and a contact email exists; every skip carries a reason. One `exported` event logs per prospect. Fully offline: reads only the SQLite store.
+
+**Website-driven onboarding.** `onboard_tenant.py --url <site>` fetches the homepage (fail-loud) plus common secondary pages (best-effort), extracts text via stdlib HTML parsing, and has Claude infer the brief + draft the full tenant, printing a diff-style summary before loader validation. The interactive and `--no-llm` paths are unchanged.
 
 **Per-tenant Gmail queue.** Outbound emails queue under `tenants/<tenant_id>/data/queued/`, never in a shared directory.
 
@@ -210,6 +225,9 @@ python scripts/check_tenant.py
 python -c "from app.agents.workflow_engine import build_workflow; build_workflow(use_checkpointer=False)"
 python scripts/run_eval.py                  # offline eval gates — exit 1 on blocking failure
 python scripts/run_batch.py --limit 3       # offline batch smoke (persists to pipeline/bdr.db)
+python scripts/check_crm_sync.py            # CRM connector checks — HTTP mocked, no keys
+python scripts/check_exports.py             # export checks — scratch DB via BDR_DB_PATH
+python scripts/check_onboarding.py          # --url onboarding checks — fetch + LLM mocked
 ```
 
 Note: `streamlit.testing.v1.AppTest` segfaults on any *second* `at.run()` in this
@@ -225,5 +243,7 @@ UI flows against a real `streamlit run` server (e.g. Playwright) instead.
 3. ~~SQLite persistence~~ — done (`services/store.py`, runs + tracker + events)
 4. Multiple sequence variants per tenant (founder track vs. enterprise track)
 5. Per-tenant Exa query templates
-6. HubSpot connector alongside Notion (reuse the schema-agnostic pattern)
-7. Export queued sequences to dedicated sending tools (Instantly/Smartlead) for volume deliverability
+6. ~~HubSpot connector alongside Notion~~ — done (`services/hubspot_sync.py`, `crm.provider` dispatch)
+7. ~~Export queued sequences to sending tools (Instantly/Smartlead)~~ — done (`services/sequence_export.py` + tracker Export action)
+8. Live API push to Instantly/Smartlead (v1 export is CSV import files)
+9. Salesforce/Pipedrive connectors behind the same `crm.provider` dispatch

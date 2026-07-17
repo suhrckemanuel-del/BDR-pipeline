@@ -113,8 +113,12 @@ sender:
   dm_signoff: Your Name               # optional — defaults to first name
 
 crm:
-  enabled: false                      # show Notion sync UI for this tenant?
-  notion_database_id: null            # optional override of NOTION_DATABASE_ID
+  enabled: false                      # show the CRM sync UI for this tenant?
+  provider: notion                    # notion (default) | hubspot | none
+  notion_database_id: null            # notion only — optional override of NOTION_DATABASE_ID
+  hubspot_token_env: null             # hubspot only — name of the env var holding this
+                                      # tenant's private-app token (falls back to
+                                      # HUBSPOT_ACCESS_TOKEN). Never put tokens here.
 ```
 
 The schema is enforced (`extra="forbid"` — unknown keys raise validation errors).

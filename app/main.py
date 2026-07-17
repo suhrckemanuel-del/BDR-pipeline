@@ -28,7 +28,7 @@ if str(ROOT) not in sys.path:
 # Hydrate env from Streamlit secrets when running on Streamlit Cloud
 _SECRET_KEYS = (
     "ANTHROPIC_API_KEY", "EXA_API_KEY", "HUNTER_API_KEY",
-    "NOTION_API_KEY", "NOTION_DATABASE_ID",
+    "NOTION_API_KEY", "NOTION_DATABASE_ID", "HUBSPOT_ACCESS_TOKEN",
     "GMAIL_SENDER", "GMAIL_APP_PASSWORD",
     "LANGCHAIN_API_KEY", "BDR_TENANT",
 )
