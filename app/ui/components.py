@@ -136,7 +136,28 @@ def _readable_label(value: str) -> str:
     return (value or "").replace("_", " ").title()
 
 
-def account_score_panel(score: Any) -> None:
+def score_chip(score: Any) -> None:
+    """Compact inline chip: composite score + priority label."""
+    if not score:
+        return
+    priority = getattr(score, "priority_label", "") or ""
+    tone = {
+        "high_priority": "good",
+        "review": "warn",
+        "needs_more_research": "warn",
+        "do_not_send_yet": "bad",
+    }.get(priority, "warn")
+    overall = getattr(score, "overall_score", 0) or 0
+    st.markdown(
+        f'<div class="account-score-card {tone}" style="padding:8px 14px;display:inline-block">'
+        f'<b>{escape(str(overall))}</b><small>/100</small> · '
+        f'{escape(_readable_label(priority))}'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def account_score_panel(score: Any, *, expandable: bool = False) -> None:
     if not score:
         return
 
@@ -178,8 +199,7 @@ def account_score_panel(score: Any) -> None:
             + "</div>"
         )
 
-    st.markdown(
-        f'<div class="account-score-card {tone}">'
+    top_html = (
         '<div class="score-top">'
         '<div class="score-number">'
         f'<span>{escape(str(getattr(score, "overall_score", 0)))}</span><small>/100</small>'
@@ -190,6 +210,22 @@ def account_score_panel(score: Any) -> None:
         f'<div class="score-action">{escape(getattr(score, "recommended_action", "") or "")}</div>'
         '</div>'
         '</div>'
+    )
+    if expandable:
+        st.markdown(
+            f'<div class="account-score-card {tone}">{top_html}</div>',
+            unsafe_allow_html=True,
+        )
+        with st.expander("Score components", expanded=False):
+            st.markdown(
+                f'<div class="account-score-card {tone}">'
+                f'{"".join(comp_html)}{warnings_html}</div>',
+                unsafe_allow_html=True,
+            )
+        return
+    st.markdown(
+        f'<div class="account-score-card {tone}">'
+        f'{top_html}'
         f'{"".join(comp_html)}'
         f'{warnings_html}'
         '</div>',

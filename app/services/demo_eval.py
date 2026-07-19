@@ -30,6 +30,11 @@ from app.agents.state import (
     SequenceTouch,
     StrategyDecision,
 )
+from app.services.account_scoring import (
+    DEFAULT_WEIGHTS,
+    _priority_label,
+    expected_overall,
+)
 from app.services.report_builder import build_account_report_markdown
 from app.tenants import load_tenant
 from app.tenants.schema import TenantConfig
@@ -217,16 +222,23 @@ def build_sample_state(tenant: TenantConfig, prospect: dict[str, str], index: in
             )
         )
 
-    score_value = max(55, min(88, 78 - index * 4 + len(evidence) * 2))
-    priority = "review" if score_value < 80 else "high_priority"
+    component_scores = {
+        "icp_fit": 5 if index % 3 == 0 else 4,
+        "pain_evidence": 3,
+        "trigger_strength": 4 if index % 2 == 0 else 3,
+        "contact_confidence": 2,
+        "evidence_quality": 3,
+    }
+    score_value = expected_overall(component_scores, DEFAULT_WEIGHTS)
+    priority = _priority_label(score_value, False)
     account_score = AccountScoringResult(
         overall_score=score_value,
         priority_label=priority,
-        icp_fit=_component("ICP fit", 4, "Industry and motion align with the demo ICP.", ["icp-score"]),
-        pain_evidence=_component("Pain evidence", 3, "Pain is plausible but should be verified.", ["manual-trigger"]),
-        trigger_strength=_component("Trigger strength", 4, "Demo notes include a clear operating trigger.", ["manual-trigger"]),
-        contact_confidence=_component("Contact confidence", 2, "Dry-run mode does not enrich real contacts.", []),
-        evidence_quality=_component("Evidence quality", 3, "Evidence is sufficient for demo validation, not sending.", ["manual-trigger"]),
+        icp_fit=_component("ICP fit", component_scores["icp_fit"], "Industry and motion align with the demo ICP.", ["icp-score"]),
+        pain_evidence=_component("Pain evidence", component_scores["pain_evidence"], "Pain is plausible but should be verified.", ["manual-trigger"]),
+        trigger_strength=_component("Trigger strength", component_scores["trigger_strength"], "Demo notes include a clear operating trigger.", ["manual-trigger"]),
+        contact_confidence=_component("Contact confidence", component_scores["contact_confidence"], "Dry-run mode does not enrich real contacts.", []),
+        evidence_quality=_component("Evidence quality", component_scores["evidence_quality"], "Evidence is sufficient for demo validation, not sending.", ["manual-trigger"]),
         recommended_action="Review evidence and verify contact manually before any outreach.",
         warnings=["Dry-run metrics are internal workflow checks, not campaign performance."],
     )

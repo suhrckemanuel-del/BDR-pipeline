@@ -269,7 +269,7 @@ def render_main(tenant: TenantConfig, state: dict) -> None:
 
     account_score = getattr(enrichment, "account_score", None) if enrichment else None
     if account_score:
-        C.account_score_panel(account_score)
+        C.account_score_panel(account_score, expandable=True)
 
     if critic_result:
         C.quality_gate_panel(critic_result)

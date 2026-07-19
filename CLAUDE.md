@@ -186,6 +186,8 @@ Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 
 **Every run is eval-gated and persisted.** `pipeline_evals.evaluate_state()` (no LLM, no network) runs after every pipeline execution — structural gates (5 touches, valid channels, ordered days), copy-quality gates (placeholder leaks, personalization, anti-AI filter idempotency), and critic thresholds (overall ≥ 3.0, no `do_not_send_yet` verdict, no high-severity risks). Blocking failures set `eval_passed=False` — those prospects should not be queued. Runs, tracker rows, and events persist to `pipeline/bdr.db` via `services/store.py` (stdlib sqlite3, WAL). `scripts/run_eval.py` is the CI regression loop: exit 1 on any blocking gate failure.
 
+**Tenant-weighted account scoring.** `services/account_scoring.py` owns the composite 0–100 account-readiness score: five deterministic 0–5 components (ICP fit, pain evidence, trigger strength, contact confidence, evidence quality) combined by `expected_overall()` using per-tenant weights (`icp.scoring_weights`, defaults reproduce the historical 25/25/20/20/10 split — omitting the field is fully backward compatible). The LLM may inform individual signals upstream, but the composite arithmetic is pure and offline. `pipeline_evals` re-runs the arithmetic as the `score_components_sum` gate on every run; the run panel and tracker surface the breakdown (`score_chip` + expandable component table).
+
 **Prospect tracker, not a CRM.** `store.py` keeps one row per (tenant, company) with a status funnel: researched → queued → sent → replied → meeting (+ not_a_fit). Reruns refresh scores without resetting funnel progress. Reply detection (`reply_tracker.py`, read-only Gmail IMAP with the existing App Password) moves prospects to `replied` and logs the outreach angle — powering per-angle reply-rate stats. Real CRM integration stays external (Notion sync; more connectors welcome).
 
 **Batch mode has an offline path.** `batch_runner.run_batch(mode="sample")` uses the deterministic fixture states from `demo_eval.py`, so batch + tracker + history can be demoed and tested with zero API keys. Live mode runs the full LangGraph workflow per row; one failing prospect never aborts the batch.
@@ -228,6 +230,7 @@ python scripts/run_batch.py --limit 3       # offline batch smoke (persists to p
 python scripts/check_crm_sync.py            # CRM connector checks — HTTP mocked, no keys
 python scripts/check_exports.py             # export checks — scratch DB via BDR_DB_PATH
 python scripts/check_onboarding.py          # --url onboarding checks — fetch + LLM mocked
+python scripts/check_scoring.py             # composite-score checks — weights, bounds, eval gate
 ```
 
 Note: `streamlit.testing.v1.AppTest` segfaults on any *second* `at.run()` in this
@@ -238,7 +241,7 @@ UI flows against a real `streamlit run` server (e.g. Playwright) instead.
 
 ## Roadmap
 
-1. Signal-weighted ICP scoring (0–100 composite vs. 3-tier)
+1. ~~Signal-weighted ICP scoring (0–100 composite vs. 3-tier)~~ — done (`services/account_scoring.py`, tenant `icp.scoring_weights` + `score_components_sum` eval gate)
 2. Per-tenant model overrides (Sonnet vs. Opus per agent)
 3. ~~SQLite persistence~~ — done (`services/store.py`, runs + tracker + events)
 4. Multiple sequence variants per tenant (founder track vs. enterprise track)

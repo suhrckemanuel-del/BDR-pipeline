@@ -103,6 +103,12 @@ icp:
   tier3_label: "Tier 3 — Below Threshold"
   tier_criteria: >                    # one-line summary used in ICP prompt
     Tier 1 = $50M+ ARR. Tier 2 = $10–50M. Tier 3 = below.
+  scoring_weights:                    # optional — relative weights for the 0-100
+    icp_fit: 25                       # composite account score. Omit the block to
+    pain_evidence: 25                 # keep the default 25/25/20/20/10 split.
+    trigger_strength: 20              # Weights are normalized, so any positive
+    contact_confidence: 20            # mix works; all five keys are optional.
+    evidence_quality: 10
 
 sender:
   name: Your Name                     # required — used in email signature

@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.agents.state import ANGLE_KEYS
+from app.services.account_scoring import effective_weights, expected_overall
 from app.services.humanizer_rules import humanize
 
 EXPECTED_TOUCHES = 5
@@ -278,6 +279,30 @@ def evaluate_state(state: dict, *, strict: bool = True) -> EvalReport:
         add(EvalCheck("no_high_severity_risks", not high_risks, "fail", ", ".join(high_risks)))
         unsupported = _get(gate, "unsupported_claim_count", 0) or 0
         add(EvalCheck("no_unsupported_claims", unsupported == 0, "warn", f"{unsupported} unsupported"))
+
+    # ----- account-score integrity ------------------------------------------
+    account_score = _get(enrichment, "account_score")
+    if account_score is not None:
+        components = {
+            name: _get(_get(account_score, name), "score", 0) or 0
+            for name in (
+                "icp_fit",
+                "pain_evidence",
+                "trigger_strength",
+                "contact_confidence",
+                "evidence_quality",
+            )
+        }
+        overall = _get(account_score, "overall_score", 0) or 0
+        expected = expected_overall(components, effective_weights(state.get("tenant")))
+        add(
+            EvalCheck(
+                "score_components_sum",
+                abs(overall - expected) <= 1,
+                completeness,
+                f"overall={overall}, expected={expected} from tenant weights",
+            )
+        )
 
     return report
 

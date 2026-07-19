@@ -221,6 +221,34 @@ def _render_lifetime_stats(tenant: TenantConfig) -> None:
     )
 
 
+def _render_tracker_score_inspector(tenant: TenantConfig, visible: list[dict]) -> None:
+    """Score chip + expandable component breakdown for a tracked prospect."""
+    with_runs = [p for p in visible if p.get("last_run_id")]
+    if not with_runs:
+        return
+    C.section_title("Score details")
+    choice = st.selectbox(
+        "Prospect",
+        options=["—"] + [p["company"] for p in with_runs],
+        key="tracker_score_prospect",
+        label_visibility="collapsed",
+    )
+    if choice == "—":
+        return
+    prospect = next(p for p in with_runs if p["company"] == choice)
+    run = store.get_run(int(prospect["last_run_id"]))
+    if not run:
+        st.caption("Latest run for this prospect is no longer in the store.")
+        return
+    state = store.rehydrate_state(run)
+    account_score = getattr(state.get("enrichment"), "account_score", None)
+    if account_score is None:
+        st.caption("No account score was recorded on the latest run.")
+        return
+    C.score_chip(account_score)
+    C.account_score_panel(account_score, expandable=True)
+
+
 # ---------------------------------------------------------------------------
 # Tracker view
 # ---------------------------------------------------------------------------
@@ -302,6 +330,8 @@ def render_tracker_view(tenant: TenantConfig) -> None:
     if changed:
         st.toast(f"Updated {changed} prospect status(es).")
         st.rerun()
+
+    _render_tracker_score_inspector(tenant, visible)
 
     # Export to sending tool
     C.section_title("Export to sending tool")

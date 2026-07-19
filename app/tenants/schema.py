@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class BrandConfig(BaseModel):
@@ -86,6 +86,41 @@ class CRMConfig(BaseModel):
     )
 
 
+class ScoringWeights(BaseModel):
+    """Relative weights for the five account-score components.
+
+    Weights are relative, not percentages — they are normalized at scoring
+    time, so any positive mix works. Defaults reproduce the historical
+    hardcoded 25/25/20/20/10 split exactly.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    icp_fit: float = Field(default=25, description="Weight of the ICP-tier fit component.")
+    pain_evidence: float = Field(default=25, description="Weight of observed pain-signal strength.")
+    trigger_strength: float = Field(default=20, description="Weight of buying-moment / job-posting intent.")
+    contact_confidence: float = Field(default=20, description="Weight of contact seniority/confidence.")
+    evidence_quality: float = Field(default=10, description="Weight of overall evidence sourcing quality.")
+
+    @model_validator(mode="after")
+    def _check_weights(self) -> "ScoringWeights":
+        weights = self.as_map()
+        negative = [name for name, w in weights.items() if w < 0]
+        if negative:
+            raise ValueError(f"scoring weights must be >= 0, got negative: {negative}")
+        if sum(weights.values()) <= 0:
+            raise ValueError("scoring weights must sum to a positive number")
+        return self
+
+    def as_map(self) -> dict[str, float]:
+        return {
+            "icp_fit": self.icp_fit,
+            "pain_evidence": self.pain_evidence,
+            "trigger_strength": self.trigger_strength,
+            "contact_confidence": self.contact_confidence,
+            "evidence_quality": self.evidence_quality,
+        }
+
+
 class ICPConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -100,6 +135,13 @@ class ICPConfig(BaseModel):
         description=(
             "One-line summary of tier criteria, used inside the ICP classification prompt. "
             "Full ICP definition lives in icp.txt."
+        ),
+    )
+    scoring_weights: ScoringWeights = Field(
+        default_factory=ScoringWeights,
+        description=(
+            "Relative weights for the composite 0-100 account score. "
+            "Omit to keep the default 25/25/20/20/10 split."
         ),
     )
 
