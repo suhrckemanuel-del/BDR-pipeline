@@ -1,0 +1,61 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  offline-checks:
+    name: Offline check suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Tenant configs validate
+        run: python scripts/check_tenant.py
+
+      - name: Workflow builds
+        run: python -c "from app.agents.workflow_engine import build_workflow; build_workflow(use_checkpointer=False)"
+
+      - name: Eval gates (offline)
+        run: python scripts/run_eval.py
+
+      - name: Batch smoke (offline sample mode)
+        run: python scripts/run_batch.py --limit 3
+        env:
+          BDR_DB_PATH: /tmp/ci-batch.db
+
+      - name: CRM connector checks (HTTP mocked)
+        run: python scripts/check_crm_sync.py
+
+      - name: Sequence export checks (scratch DB)
+        run: python scripts/check_exports.py
+
+      - name: Onboarding checks (fetch + LLM mocked)
+        run: python scripts/check_onboarding.py
+
+      - name: Composite scoring checks
+        run: python scripts/check_scoring.py
+
+      - name: Live-push checks (HTTP mocked)
+        run: python scripts/check_push.py
+
+      - name: Config override checks (LLM mocked)
+        run: python scripts/check_config_overrides.py
+
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (no push)
+        run: docker build -t bdr-pipeline:ci .

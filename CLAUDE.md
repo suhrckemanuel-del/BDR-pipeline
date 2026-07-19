@@ -58,10 +58,13 @@ app/
     strategist.py               # Picks 1 of 3 tenant angles
     humanizer.py                # LLM observations + deterministic copy assembly + 5-touch sequence
     critic.py                   # 4-dim LLM scoring + per-touch first-paragraph rewrites
+    model_config.py             # resolve_model(): per-tenant model overrides, per-agent defaults
   services/
     crm_sync.py                 # CRM dispatch node (tenant.crm.provider) + Notion push (schema-agnostic)
     hubspot_sync.py             # HubSpot push: default properties + ProspectCard as an associated Note
+    account_scoring.py          # Composite 0-100 account score: tenant-weighted, deterministic
     sequence_export.py          # Instantly/Smartlead CSV export of queued, eval-passed sequences
+    sequence_push.py            # Live API push of eligible leads into Instantly/Smartlead campaigns
     gmail_sender.py             # Per-tenant queue at tenants/<id>/data/queued/
     humanizer_rules.py          # 29-rule anti-AI regex filter
     store.py                    # SQLite persistence: runs + prospect tracker + events (pipeline/bdr.db)
@@ -97,7 +100,11 @@ scripts/
   check_crm_sync.py             # Offline CRM connector checks (mocked HTTP, exit 1 on failure)
   check_exports.py              # Offline export checks (scratch BDR_DB_PATH, exit 1 on failure)
   check_onboarding.py           # Offline --url onboarding checks (mocked fetch + LLM, exit 1 on failure)
+  check_scoring.py              # Offline composite-score checks (weights, bounds, eval gate)
+  check_push.py                 # Offline live-push checks (mocked HTTP, scratch BDR_DB_PATH)
+  check_config_overrides.py     # Offline model/Exa-template override checks (mocked LLM)
 
+.github/workflows/checks.yml    # CI: full offline check suite + docker build on every push/PR
 Dockerfile / .dockerignore      # Deployable image — see docs/deploy.md (BDR_DB_PATH on a /data volume)
 ```
 
@@ -222,9 +229,9 @@ Two paths, both documented in `tenants/README.md`:
 
 ---
 
-## No Test Suite
+## No Test Suite — CI Runs the Offline Checks
 
-Testing is manual: Streamlit UI tested live, batch scripts run with `--dry-run` first, validators (`check_tenant.py`) run on tenant edits. Smoke tests:
+There is no pytest suite; instead every code path has a deterministic offline check script, and `.github/workflows/checks.yml` runs the full set (plus a docker build job) on every push/PR — no secrets needed, everything is offline by design. Streamlit UI is verified against a real `streamlit run` server. The same suite locally:
 
 ```bash
 python scripts/check_tenant.py
