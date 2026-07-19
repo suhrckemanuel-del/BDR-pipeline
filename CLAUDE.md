@@ -62,6 +62,14 @@ app/
     crm_sync.py                 # Notion push (schema-agnostic, per-tenant DB override)
     gmail_sender.py             # Per-tenant queue at tenants/<id>/data/queued/
     humanizer_rules.py          # 29-rule anti-AI regex filter
+    store.py                    # SQLite persistence: runs + prospect tracker + events (pipeline/bdr.db)
+    pipeline_evals.py           # Deterministic quality gates run on EVERY pipeline execution
+    batch_runner.py             # Batch mode: pipeline over a prospect list, eval-gated + persisted
+    reply_tracker.py            # Gmail IMAP reply detection → tracker status + per-angle reply rates
+  ui/
+    layout.py                   # Sidebar + single-run result panel
+    ops.py                      # Batch runs / Pipeline tracker / Run history views
+    components.py, theme.py     # Chalk design system
   tenants/
     schema.py                   # Pydantic v2 TenantConfig
     loader.py                   # load_tenant() — cached, validates on read
@@ -80,6 +88,9 @@ scripts/
   onboard_tenant.py             # Interactive Claude-assisted tenant wizard
   check_tenant.py               # Pydantic-based tenant validator
   send_via_gmail.py             # Send queued sequences for a tenant
+  run_batch.py                  # CLI batch runner (--mode sample|live), persists to SQLite
+  run_eval.py                   # CI-able eval-gate regression check (exit 1 on blocking failure)
+  check_replies.py              # IMAP reply detection for the tracker (--dry-run supported)
 ```
 
 ---
@@ -158,6 +169,12 @@ Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 
 **Critic is non-looping.** Rewrites in place and continues. No max-iter retry loop — kept simple to ship.
 
+**Every run is eval-gated and persisted.** `pipeline_evals.evaluate_state()` (no LLM, no network) runs after every pipeline execution — structural gates (5 touches, valid channels, ordered days), copy-quality gates (placeholder leaks, personalization, anti-AI filter idempotency), and critic thresholds (overall ≥ 3.0, no `do_not_send_yet` verdict, no high-severity risks). Blocking failures set `eval_passed=False` — those prospects should not be queued. Runs, tracker rows, and events persist to `pipeline/bdr.db` via `services/store.py` (stdlib sqlite3, WAL). `scripts/run_eval.py` is the CI regression loop: exit 1 on any blocking gate failure.
+
+**Prospect tracker, not a CRM.** `store.py` keeps one row per (tenant, company) with a status funnel: researched → queued → sent → replied → meeting (+ not_a_fit). Reruns refresh scores without resetting funnel progress. Reply detection (`reply_tracker.py`, read-only Gmail IMAP with the existing App Password) moves prospects to `replied` and logs the outreach angle — powering per-angle reply-rate stats. Real CRM integration stays external (Notion sync; more connectors welcome).
+
+**Batch mode has an offline path.** `batch_runner.run_batch(mode="sample")` uses the deterministic fixture states from `demo_eval.py`, so batch + tracker + history can be demoed and tested with zero API keys. Live mode runs the full LangGraph workflow per row; one failing prospect never aborts the batch.
+
 ---
 
 ## Tenant Loading
@@ -191,7 +208,13 @@ Testing is manual: Streamlit UI tested live, batch scripts run with `--dry-run` 
 ```bash
 python scripts/check_tenant.py
 python -c "from app.agents.workflow_engine import build_workflow; build_workflow(use_checkpointer=False)"
+python scripts/run_eval.py                  # offline eval gates — exit 1 on blocking failure
+python scripts/run_batch.py --limit 3       # offline batch smoke (persists to pipeline/bdr.db)
 ```
+
+Note: `streamlit.testing.v1.AppTest` segfaults on any *second* `at.run()` in this
+dependency set (pandas 3.0 + pyarrow, even on a minimal one-dataframe app) — verify
+UI flows against a real `streamlit run` server (e.g. Playwright) instead.
 
 ---
 
@@ -199,6 +222,8 @@ python -c "from app.agents.workflow_engine import build_workflow; build_workflow
 
 1. Signal-weighted ICP scoring (0–100 composite vs. 3-tier)
 2. Per-tenant model overrides (Sonnet vs. Opus per agent)
-3. SQLite persistence (replace CSV)
+3. ~~SQLite persistence~~ — done (`services/store.py`, runs + tracker + events)
 4. Multiple sequence variants per tenant (founder track vs. enterprise track)
 5. Per-tenant Exa query templates
+6. HubSpot connector alongside Notion (reuse the schema-agnostic pattern)
+7. Export queued sequences to dedicated sending tools (Instantly/Smartlead) for volume deliverability
