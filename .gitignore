@@ -61,3 +61,6 @@ tenants/*/data/insights.csv
 # Office / temp files
 *.tmp
 ~$*
+
+# Claude Code agent worktrees (transient)
+.claude/worktrees/
