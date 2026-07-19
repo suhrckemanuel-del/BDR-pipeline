@@ -125,6 +125,13 @@ crm:
   hubspot_token_env: null             # hubspot only — name of the env var holding this
                                       # tenant's private-app token (falls back to
                                       # HUBSPOT_ACCESS_TOKEN). Never put tokens here.
+
+outreach:                             # optional — live push to sending tools
+  instantly_campaign_id: null         # Instantly campaign that pushed leads join;
+  smartlead_campaign_id: null         # Smartlead campaign id. Unset = push disabled
+  instantly_api_key_env: null         # optional env-var names for per-tenant API keys
+  smartlead_api_key_env: null         # (fall back to INSTANTLY_API_KEY / SMARTLEAD_API_KEY).
+                                      # Never put keys themselves in config files.
 ```
 
 The schema is enforced (`extra="forbid"` — unknown keys raise validation errors).

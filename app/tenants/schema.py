@@ -86,6 +86,33 @@ class CRMConfig(BaseModel):
     )
 
 
+class OutreachToolsConfig(BaseModel):
+    """Sending-tool campaign wiring for live push (Instantly / Smartlead).
+
+    Campaign ids identify where pushed leads land. API keys never live in
+    config files — *_api_key_env optionally names an env var per tenant,
+    falling back to INSTANTLY_API_KEY / SMARTLEAD_API_KEY.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    instantly_campaign_id: Optional[str] = Field(
+        default=None,
+        description="Instantly campaign id that pushed leads join. Unset disables Instantly push.",
+    )
+    smartlead_campaign_id: Optional[str] = Field(
+        default=None,
+        description="Smartlead campaign id that pushed leads join. Unset disables Smartlead push.",
+    )
+    instantly_api_key_env: Optional[str] = Field(
+        default=None,
+        description="If set, name of the env var holding this tenant's Instantly API key.",
+    )
+    smartlead_api_key_env: Optional[str] = Field(
+        default=None,
+        description="If set, name of the env var holding this tenant's Smartlead API key.",
+    )
+
+
 class ScoringWeights(BaseModel):
     """Relative weights for the five account-score components.
 
@@ -307,6 +334,7 @@ class TenantConfig(BaseModel):
     icp: ICPConfig = Field(default_factory=ICPConfig)
     sender: SenderConfig
     crm: CRMConfig = Field(default_factory=CRMConfig)
+    outreach: OutreachToolsConfig = Field(default_factory=OutreachToolsConfig)
     angles: List[OutreachAngle] = Field(min_length=3, max_length=3)
 
     # Loaded from sibling files, not config.yaml itself

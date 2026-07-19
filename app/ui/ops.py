@@ -365,6 +365,8 @@ def render_tracker_view(tenant: TenantConfig) -> None:
         for company, reason in export_result.skipped:
             st.caption(f"Skipped {company}: {reason}")
 
+    render_push_to_tool(tenant)
+
     # Reply loop
     C.section_title("Reply loop")
     col_btn, col_stats = st.columns([1, 2])
@@ -403,6 +405,53 @@ def render_tracker_view(tenant: TenantConfig) -> None:
             )
         else:
             st.caption("Reply rates by angle appear once prospects are marked sent/replied.")
+
+
+def render_push_to_tool(tenant: TenantConfig) -> None:
+    """Live push of queued + eval-passed prospects into a sending-tool campaign."""
+    C.section_title("Push to sending tool")
+    outreach = tenant.outreach
+    configured = [
+        tool
+        for tool in ("instantly", "smartlead")
+        if getattr(outreach, f"{tool}_campaign_id", None)
+    ]
+    if not configured:
+        st.caption(
+            "Set outreach.instantly_campaign_id or outreach.smartlead_campaign_id "
+            "in tenant config to enable live push."
+        )
+        st.button("🚀 Push queued leads", disabled=True, key="tracker_push_disabled")
+        return
+
+    col_tool, col_go = st.columns([2, 2])
+    with col_tool:
+        push_tool = st.selectbox(
+            "Sending tool",
+            options=configured,
+            format_func=str.title,
+            key="tracker_push_tool",
+        )
+    with col_go:
+        if st.button("🚀 Push queued leads", key="tracker_push_go"):
+            from app.services.sequence_push import push_sequences
+
+            st.session_state["tracker_push"] = push_sequences(tenant, push_tool)
+    push_result = st.session_state.get("tracker_push")
+    if not push_result:
+        return
+    if push_result.skip_reason:
+        st.info(push_result.skip_reason)
+        return
+    if push_result.pushed:
+        verb = "payload(s) built (dry run)" if push_result.dry_run else "lead(s) pushed"
+        st.success(f"{len(push_result.pushed)} {verb} — {push_result.tool.title()}.")
+    else:
+        st.info("No eligible prospects (need status=queued and a passing latest eval run).")
+    for company, error in push_result.errors:
+        st.caption(f"⚠️ {company}: {error}")
+    for company, reason in push_result.skipped:
+        st.caption(f"Skipped {company}: {reason}")
 
 
 # ---------------------------------------------------------------------------

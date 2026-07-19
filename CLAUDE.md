@@ -176,6 +176,8 @@ Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 
 **Sending-tool export, eval-gated.** `sequence_export.py` exports queued prospects to Instantly/Smartlead lead CSVs (per-touch copy as `subject_N`/`body_N`/`day_N` custom columns) — but only when the *latest* run passed the eval gates and a contact email exists; every skip carries a reason. One `exported` event logs per prospect. Fully offline: reads only the SQLite store.
 
+**Live push behind per-tool choke points.** `sequence_push.py` pushes the same eligible prospects (eligibility reused verbatim from `sequence_export.collect_export_rows` — never forked) as leads into an Instantly (v2) or Smartlead campaign. Campaign ids live in tenant config (`outreach.instantly_campaign_id` / `outreach.smartlead_campaign_id`); keys via env-var indirection (`outreach.*_api_key_env` → fallback `INSTANTLY_API_KEY`/`SMARTLEAD_API_KEY`). Missing key/campaign id → skip with message; `BDR_PUSH_DRY_RUN=1` builds payloads with zero HTTP; one `pushed` event per prospect (detail = tool). All HTTP goes through `_instantly_api`/`_smartlead_api` so `check_push.py` can mock the wire.
+
 **Website-driven onboarding.** `onboard_tenant.py --url <site>` fetches the homepage (fail-loud) plus common secondary pages (best-effort), extracts text via stdlib HTML parsing, and has Claude infer the brief + draft the full tenant, printing a diff-style summary before loader validation. The interactive and `--no-llm` paths are unchanged.
 
 **Per-tenant Gmail queue.** Outbound emails queue under `tenants/<tenant_id>/data/queued/`, never in a shared directory.
@@ -231,6 +233,7 @@ python scripts/check_crm_sync.py            # CRM connector checks — HTTP mock
 python scripts/check_exports.py             # export checks — scratch DB via BDR_DB_PATH
 python scripts/check_onboarding.py          # --url onboarding checks — fetch + LLM mocked
 python scripts/check_scoring.py             # composite-score checks — weights, bounds, eval gate
+python scripts/check_push.py                # live-push checks — HTTP mocked, scratch DB
 ```
 
 Note: `streamlit.testing.v1.AppTest` segfaults on any *second* `at.run()` in this
@@ -248,5 +251,5 @@ UI flows against a real `streamlit run` server (e.g. Playwright) instead.
 5. Per-tenant Exa query templates
 6. ~~HubSpot connector alongside Notion~~ — done (`services/hubspot_sync.py`, `crm.provider` dispatch)
 7. ~~Export queued sequences to sending tools (Instantly/Smartlead)~~ — done (`services/sequence_export.py` + tracker Export action)
-8. Live API push to Instantly/Smartlead (v1 export is CSV import files)
+8. ~~Live API push to Instantly/Smartlead~~ — done (`services/sequence_push.py`, tenant `outreach.*` config + tracker Push action)
 9. Salesforce/Pipedrive connectors behind the same `crm.provider` dispatch
