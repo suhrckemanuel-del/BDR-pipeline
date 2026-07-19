@@ -29,6 +29,14 @@ wizard writes the folder.
 
 This takes ~3 minutes for a working draft.
 
+**From a website** — skip the Q&A entirely: point the wizard at the company's
+site and Claude drafts the whole tenant from the page content, then prints a
+diff-style summary for review before validating.
+
+```bash
+python scripts/onboard_tenant.py --url acme.com --slug acme --sender "Jane Doe"
+```
+
 ### Option B — Copy and edit by hand
 
 ```bash
