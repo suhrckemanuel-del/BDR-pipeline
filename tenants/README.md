@@ -109,6 +109,17 @@ icp:
     trigger_strength: 20              # Weights are normalized, so any positive
     contact_confidence: 20            # mix works; all five keys are optional.
     evidence_quality: 10
+  exa_query_templates: []             # optional — Exa search templates with
+                                      # {company}/{industry} placeholders. First
+                                      # template = news slot (5 results), rest =
+                                      # jobs slot (3 each). Empty keeps the
+                                      # built-in persona-driven queries.
+
+models:                               # optional — per-agent Claude model overrides.
+  enrichment: null                    # default: Haiku (summaries + ICP tiering)
+  strategist: null                    # default: Sonnet
+  humanizer: null                     # default: Sonnet
+  critic: null                        # default: Sonnet
 
 sender:
   name: Your Name                     # required — used in email signature
@@ -254,8 +265,6 @@ disabled.
 ## What the schema does NOT include (yet)
 
 - Multiple sequence variants per tenant (founder track vs. enterprise track)
-- Per-tenant LLM model overrides
-- Per-tenant Exa query templates
 - Localization (all copy is English-only)
 
 These are deliberate cuts for v1. The fastest way to add them is to extend

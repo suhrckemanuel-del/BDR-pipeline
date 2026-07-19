@@ -192,6 +192,8 @@ Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 
 **Prospect tracker, not a CRM.** `store.py` keeps one row per (tenant, company) with a status funnel: researched → queued → sent → replied → meeting (+ not_a_fit). Reruns refresh scores without resetting funnel progress. Reply detection (`reply_tracker.py`, read-only Gmail IMAP with the existing App Password) moves prospects to `replied` and logs the outreach angle — powering per-angle reply-rate stats. Real CRM integration stays external (Notion sync; more connectors welcome).
 
+**Config-only model + query flexibility.** Optional tenant `models` block (`models.enrichment/strategist/humanizer/critic`) overrides each agent's model; `app/agents/model_config.resolve_model()` is the single resolver, and every agent keeps one hardcoded default constant, so unset overrides change nothing. `icp.exa_query_templates` replaces the built-in Exa query pair with tenant templates (`{company}`/`{industry}` placeholders, literal-replace rendering so stray braces can't raise; first template = news slot with 5 results, rest = jobs slot with 3 each). `check_config_overrides.py` proves byte-identical behavior when both are absent.
+
 **Batch mode has an offline path.** `batch_runner.run_batch(mode="sample")` uses the deterministic fixture states from `demo_eval.py`, so batch + tracker + history can be demoed and tested with zero API keys. Live mode runs the full LangGraph workflow per row; one failing prospect never aborts the batch.
 
 ---
@@ -234,6 +236,7 @@ python scripts/check_exports.py             # export checks — scratch DB via B
 python scripts/check_onboarding.py          # --url onboarding checks — fetch + LLM mocked
 python scripts/check_scoring.py             # composite-score checks — weights, bounds, eval gate
 python scripts/check_push.py                # live-push checks — HTTP mocked, scratch DB
+python scripts/check_config_overrides.py    # model/Exa-template overrides — LLM mocked
 ```
 
 Note: `streamlit.testing.v1.AppTest` segfaults on any *second* `at.run()` in this
@@ -245,10 +248,10 @@ UI flows against a real `streamlit run` server (e.g. Playwright) instead.
 ## Roadmap
 
 1. ~~Signal-weighted ICP scoring (0–100 composite vs. 3-tier)~~ — done (`services/account_scoring.py`, tenant `icp.scoring_weights` + `score_components_sum` eval gate)
-2. Per-tenant model overrides (Sonnet vs. Opus per agent)
+2. ~~Per-tenant model overrides (Sonnet vs. Opus per agent)~~ — done (tenant `models` block + `agents/model_config.py`)
 3. ~~SQLite persistence~~ — done (`services/store.py`, runs + tracker + events)
 4. Multiple sequence variants per tenant (founder track vs. enterprise track)
-5. Per-tenant Exa query templates
+5. ~~Per-tenant Exa query templates~~ — done (`icp.exa_query_templates`)
 6. ~~HubSpot connector alongside Notion~~ — done (`services/hubspot_sync.py`, `crm.provider` dispatch)
 7. ~~Export queued sequences to sending tools (Instantly/Smartlead)~~ — done (`services/sequence_export.py` + tracker Export action)
 8. ~~Live API push to Instantly/Smartlead~~ — done (`services/sequence_push.py`, tenant `outreach.*` config + tracker Push action)

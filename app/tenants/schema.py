@@ -171,6 +171,14 @@ class ICPConfig(BaseModel):
             "Omit to keep the default 25/25/20/20/10 split."
         ),
     )
+    exa_query_templates: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional Exa search templates with {company}/{industry} placeholders. "
+            "The first template runs with 5 results (news slot); the rest run with "
+            "3 each (jobs slot). Empty = the built-in persona-driven queries."
+        ),
+    )
 
 
 class PersonaConfig(BaseModel):
@@ -320,6 +328,28 @@ class HumanizerCopy(BaseModel):
         raise KeyError(f"No copy for angle {key!r}")
 
 
+class ModelsConfig(BaseModel):
+    """Optional per-agent Claude model overrides.
+
+    Unset agents keep their hardcoded default (see each agent module's model
+    constant), so omitting this block changes nothing.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    enrichment: Optional[str] = Field(
+        default=None, description="Model for enrichment summaries + ICP classification (default: Haiku)."
+    )
+    strategist: Optional[str] = Field(
+        default=None, description="Model for angle selection (default: Sonnet)."
+    )
+    humanizer: Optional[str] = Field(
+        default=None, description="Model for observation generation (default: Sonnet)."
+    )
+    critic: Optional[str] = Field(
+        default=None, description="Model for sequence critique + rewrites (default: Sonnet)."
+    )
+
+
 class TenantConfig(BaseModel):
     """Top-level tenant config. One per `tenants/<slug>/` folder."""
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
@@ -336,6 +366,7 @@ class TenantConfig(BaseModel):
     crm: CRMConfig = Field(default_factory=CRMConfig)
     outreach: OutreachToolsConfig = Field(default_factory=OutreachToolsConfig)
     angles: List[OutreachAngle] = Field(min_length=3, max_length=3)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
 
     # Loaded from sibling files, not config.yaml itself
     icp_definition: str = Field(default="", description="Loaded from icp.txt.")

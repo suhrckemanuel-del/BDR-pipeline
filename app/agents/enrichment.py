@@ -25,6 +25,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.services.account_scoring import compute_account_score, persona_keywords
 from app.tenants.schema import TenantConfig
 
+from .model_config import resolve_model
 from .state import (
     BDRState,
     ContactLead,
@@ -53,6 +54,27 @@ def _build_jobs_query(company: str, tenant: TenantConfig) -> str:
         f'"{t}"' for t in [tenant.persona.title, *tenant.persona.title_alternates]
     ) or '"head of strategy"'
     return f'"{company}" {persona_terms} site:linkedin.com'
+
+
+def _build_exa_queries(company: str, industry: str, tenant: TenantConfig | None) -> list[tuple[str, int]]:
+    """(query, num_results) pairs to run against Exa.
+
+    Tenants may supply icp.exa_query_templates with {company}/{industry}
+    placeholders; the first template fills the news slot (5 results ->
+    signals), the rest the jobs slot (3 each -> job_signals). Rendering uses
+    literal replace, not .format(), so stray braces in a template can't raise.
+    Empty/absent templates keep the built-in persona-driven query pair.
+    """
+    templates = getattr(getattr(tenant, "icp", None), "exa_query_templates", None) or []
+    if not templates:
+        return [
+            (_build_news_query(company, tenant), 5),
+            (_build_jobs_query(company, tenant), 3),
+        ]
+    rendered = [
+        t.replace("{company}", company).replace("{industry}", industry) for t in templates
+    ]
+    return [(q, 5 if i == 0 else 3) for i, q in enumerate(rendered)]
 
 
 # ---------------------------------------------------------------------------
@@ -426,7 +448,7 @@ def _classify_icp(
         )
 
     llm = ChatAnthropic(
-        model=HAIKU_MODEL,
+        model=resolve_model(tenant, "enrichment", HAIKU_MODEL),
         api_key=api_key,
         max_tokens=300,
         temperature=0.0,
@@ -523,7 +545,7 @@ def _summarise(
         f"Summarise through the {tenant.persona.title} lens."
     )
     llm = ChatAnthropic(
-        model=HAIKU_MODEL,
+        model=resolve_model(tenant, "enrichment", HAIKU_MODEL),
         api_key=api_key,
         max_tokens=500,
         temperature=0.2,
@@ -546,17 +568,15 @@ def _summarise(
 # ---------------------------------------------------------------------------
 # LangGraph node — async with parallel Exa + Hunter
 # ---------------------------------------------------------------------------
-async def _run_enrichment_async(company: str, tenant: TenantConfig) -> dict:
-    news_q = _build_news_query(company, tenant)
-    jobs_q = _build_jobs_query(company, tenant)
+async def _run_enrichment_async(company: str, industry: str, tenant: TenantConfig) -> dict:
+    queries = _build_exa_queries(company, industry, tenant)
 
-    news_task = _async_fetch_exa(news_q, 5)
-    jobs_task = _async_fetch_exa(jobs_q, 3)
+    exa_tasks = [_async_fetch_exa(query, num_results) for query, num_results in queries]
     hunter_task = _async_fetch_hunter(company, tenant)
 
-    signals, job_signals, (domain, contacts) = await asyncio.gather(
-        news_task, jobs_task, hunter_task
-    )
+    *exa_results, (domain, contacts) = await asyncio.gather(*exa_tasks, hunter_task)
+    signals = exa_results[0] if exa_results else []
+    job_signals = [signal for result in exa_results[1:] for signal in result]
     return {
         "signals": signals,
         "job_signals": job_signals,
@@ -582,11 +602,12 @@ def run_enrichment(state: BDRState) -> dict:
 
     try:
         loop = asyncio.new_event_loop()
-        io_result = loop.run_until_complete(_run_enrichment_async(company, tenant))
+        io_result = loop.run_until_complete(_run_enrichment_async(company, industry, tenant))
         loop.close()
     except Exception as exc:
         trace.append(f"Enrichment: parallel fetch failed ({exc}), falling back to sequential")
-        signals = _fetch_exa(_build_news_query(company, tenant))
+        queries = _build_exa_queries(company, industry, tenant)
+        signals = _fetch_exa(queries[0][0], queries[0][1]) if queries else []
         job_signals: List[LiveSignal] = []
         domain, contacts = _fetch_hunter_contacts(company, tenant)
         io_result = {"signals": signals, "job_signals": job_signals, "domain": domain, "contacts": contacts}

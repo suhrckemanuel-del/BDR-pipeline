@@ -29,6 +29,8 @@ from app.prompts import load_prompt
 from app.services.humanizer_rules import humanize_angle_draft, humanize_sequence
 from app.tenants.schema import AngleCopy, TenantConfig
 
+from .model_config import resolve_model
+
 from .state import (
     ANGLE_KEYS,
     AngleDraft,
@@ -121,7 +123,7 @@ def _generate_observations(
         return _default_observations(company, industry, tenant)
 
     llm = ChatAnthropic(
-        model=MODEL,
+        model=resolve_model(tenant, "humanizer", MODEL),
         api_key=api_key,
         max_tokens=900,
         temperature=0.4,

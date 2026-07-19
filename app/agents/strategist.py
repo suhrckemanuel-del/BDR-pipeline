@@ -18,6 +18,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.prompts import load_prompt
 from app.tenants.schema import TenantConfig
 
+from .model_config import resolve_model
+
 from .state import (
     ANGLE_KEYS,
     BDRState,
@@ -185,7 +187,7 @@ def run_strategist(state: BDRState) -> dict:
         return {"error": "ANTHROPIC_API_KEY not set.", "agent_trace": trace}
 
     llm = ChatAnthropic(
-        model=MODEL,
+        model=resolve_model(tenant, "strategist", MODEL),
         api_key=api_key,
         max_tokens=800,
         temperature=0.3,
