@@ -121,6 +121,26 @@ models:                               # optional — per-agent Claude model over
   humanizer: null                     # default: Sonnet
   critic: null                        # default: Sonnet
 
+sequence_variants:                    # optional — named sequence tracks. Omit the
+  default: founder                    # block to keep the built-in 6-touch plan.
+  variants:                           # Touch types map to the existing copy banks:
+    - key: founder                    # linkedin_connect | intro_email |
+      name: Founder track             # followup_email | social_proof_email |
+      description: Short, email-only  # linkedin_dm | breakup_email.
+      touches:                        # Days must be non-decreasing.
+        - {type: intro_email, day: 0}
+        - {type: followup_email, day: 2}
+        - {type: breakup_email, day: 7}
+    - key: enterprise
+      name: Enterprise track
+      touches:
+        - {type: linkedin_connect, day: 0}
+        - {type: intro_email, day: 1}
+        - {type: followup_email, day: 4}
+        - {type: social_proof_email, day: 10}
+        - {type: linkedin_dm, day: 14}
+        - {type: breakup_email, day: 30}
+
 sender:
   name: Your Name                     # required — used in email signature
   title: GTM Lead                     # optional — appears in sender block
@@ -270,7 +290,6 @@ disabled.
 
 ## What the schema does NOT include (yet)
 
-- Multiple sequence variants per tenant (founder track vs. enterprise track)
 - Localization (all copy is English-only)
 
 These are deliberate cuts for v1. The fastest way to add them is to extend

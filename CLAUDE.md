@@ -105,6 +105,7 @@ scripts/
   check_scoring.py              # Offline composite-score checks (weights, bounds, eval gate)
   check_push.py                 # Offline live-push checks (mocked HTTP, scratch BDR_DB_PATH)
   check_config_overrides.py     # Offline model/Exa-template override checks (mocked LLM)
+  check_variants.py             # Offline sequence-track checks (keyless humanizer)
 
 .github/workflows/checks.yml    # CI: full offline check suite + docker build on every push/PR
 Dockerfile / .dockerignore      # Deployable image — see docs/deploy.md (BDR_DB_PATH on a /data volume)
@@ -203,6 +204,8 @@ Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 
 **Config-only model + query flexibility.** Optional tenant `models` block (`models.enrichment/strategist/humanizer/critic`) overrides each agent's model; `app/agents/model_config.resolve_model()` is the single resolver, and every agent keeps one hardcoded default constant, so unset overrides change nothing. `icp.exa_query_templates` replaces the built-in Exa query pair with tenant templates (`{company}`/`{industry}` placeholders, literal-replace rendering so stray braces can't raise; first template = news slot with 5 results, rest = jobs slot with 3 each). `check_config_overrides.py` proves byte-identical behavior when both are absent.
 
+**Named sequence tracks, config-only.** Optional tenant `sequence_variants` block defines named touch plans (e.g. founder vs. enterprise): each variant lists `(type, day)` touches drawn from the six copy-bank slots (`linkedin_connect`, `intro_email`, `followup_email`, `social_proof_email`, `linkedin_dm`, `breakup_email`). Absent block = the built-in 6-touch plan, byte-identical to before (including the tier-3 social-proof drop, which explicit plans bypass). Selection: run-level `sequence_variant` key (sidebar selector, shown only when a tenant defines tracks) → config `default` → first variant, never raises. The `sequence_touch_count` eval gate expects the active plan's length for variant tenants.
+
 **Batch mode has an offline path.** `batch_runner.run_batch(mode="sample")` uses the deterministic fixture states from `demo_eval.py`, so batch + tracker + history can be demoed and tested with zero API keys. Live mode runs the full LangGraph workflow per row; one failing prospect never aborts the batch.
 
 ---
@@ -246,6 +249,7 @@ python scripts/check_onboarding.py          # --url onboarding checks — fetch 
 python scripts/check_scoring.py             # composite-score checks — weights, bounds, eval gate
 python scripts/check_push.py                # live-push checks — HTTP mocked, scratch DB
 python scripts/check_config_overrides.py    # model/Exa-template overrides — LLM mocked
+python scripts/check_variants.py            # sequence-track checks — offline humanizer
 ```
 
 Note: `streamlit.testing.v1.AppTest` segfaults on any *second* `at.run()` in this
@@ -259,7 +263,7 @@ UI flows against a real `streamlit run` server (e.g. Playwright) instead.
 1. ~~Signal-weighted ICP scoring (0–100 composite vs. 3-tier)~~ — done (`services/account_scoring.py`, tenant `icp.scoring_weights` + `score_components_sum` eval gate)
 2. ~~Per-tenant model overrides (Sonnet vs. Opus per agent)~~ — done (tenant `models` block + `agents/model_config.py`)
 3. ~~SQLite persistence~~ — done (`services/store.py`, runs + tracker + events)
-4. Multiple sequence variants per tenant (founder track vs. enterprise track)
+4. ~~Multiple sequence variants per tenant (founder track vs. enterprise track)~~ — done (tenant `sequence_variants` block + sidebar track selector)
 5. ~~Per-tenant Exa query templates~~ — done (`icp.exa_query_templates`)
 6. ~~HubSpot connector alongside Notion~~ — done (`services/hubspot_sync.py`, `crm.provider` dispatch)
 7. ~~Export queued sequences to sending tools (Instantly/Smartlead)~~ — done (`services/sequence_export.py` + tracker Export action)

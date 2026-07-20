@@ -295,6 +295,80 @@ def _assemble_before_after(before: str, after: str, tenant: TenantConfig) -> str
     return f"{before}\n\nWith {tenant.brand.name}: {after}"
 
 
+# The built-in plan, expressed as (touch type, day). This is what every tenant
+# without a sequence_variants block gets — behavior identical to the original
+# hardcoded 6-touch builder (including the tier-3 social-proof drop below).
+_DEFAULT_TOUCH_PLAN: list[tuple[str, int]] = [
+    ("linkedin_connect", 0),
+    ("intro_email", 0),
+    ("followup_email", 3),
+    ("social_proof_email", 7),
+    ("linkedin_dm", 10),
+    ("breakup_email", 21),
+]
+
+
+def _touch_builders(
+    angle_key: str,
+    observation: str,
+    company: str,
+    industry: str,
+    variant: int,
+    tenant: TenantConfig,
+    contact_first_name: str,
+):
+    """(subject, body, channel, note) builder per sequence touch type."""
+    copy = tenant.humanizer_copy.by_key(angle_key)
+    signature = tenant.sender.resolved_signature()
+    dm_signoff = tenant.sender.resolved_dm_signoff()
+
+    def fmt(bank: list[str]) -> str:
+        return bank[variant].format(company=company, industry=industry)
+
+    return {
+        "linkedin_connect": lambda: (
+            "",
+            fmt(copy.linkedin_connect_notes),
+            "linkedin_connect",
+            (
+                "Send as a LinkedIn connection request (no note or brief note only). "
+                "Being connected means your later DM arrives as a connection message, not cold InMail."
+            ),
+        ),
+        "intro_email": lambda: (
+            _assemble_subject(copy, company, variant),
+            _assemble_email(angle_key, observation, company, industry, variant, copy, signature),
+            "email",
+            "",
+        ),
+        "followup_email": lambda: (fmt(copy.followup_subjects), fmt(copy.followup_bodies), "email", ""),
+        "social_proof_email": lambda: (
+            fmt(copy.social_proof_subjects), fmt(copy.social_proof_bodies), "email", "",
+        ),
+        "linkedin_dm": lambda: (
+            "",
+            _assemble_dm(angle_key, observation, company, industry, variant, copy, dm_signoff, contact_first_name),
+            "linkedin",
+            "Send as a LinkedIn DM (you're now connected from the Day 0 request).",
+        ),
+        "breakup_email": lambda: (fmt(copy.breakup_subjects), fmt(copy.breakup_bodies), "email", ""),
+    }
+
+
+def resolve_touch_plan(tenant: TenantConfig, sequence_variant: str = "") -> tuple[str, list[tuple[str, int]]]:
+    """(variant_key, [(touch type, day), ...]) for a run.
+
+    Tenants without sequence_variants get the built-in plan (key ""). An
+    unknown requested key falls back to the config default, then the first
+    variant — never raises.
+    """
+    variants = getattr(tenant, "sequence_variants", None)
+    if variants is None:
+        return "", list(_DEFAULT_TOUCH_PLAN)
+    chosen = variants.resolve(sequence_variant)
+    return chosen.key, [(t.type, t.day) for t in chosen.touches]
+
+
 def _build_sequence(
     angle_key: str,
     observation: str,
@@ -304,72 +378,36 @@ def _build_sequence(
     persona: str,
     tenant: TenantConfig,
     contact_first_name: str = "",
+    sequence_variant: str = "",
 ) -> OutreachSequence:
-    """Build a 6-touch sequence including Day 0 LinkedIn connection request."""
+    """Assemble the outreach sequence from the tenant's active touch plan."""
     angle_idx = ANGLE_KEYS.index(angle_key)
     variant = _variant_index(tenant.tenant_id, company, angle_idx)
-    copy = tenant.humanizer_copy.by_key(angle_key)
-    signature = tenant.sender.resolved_signature()
-    dm_signoff = tenant.sender.resolved_dm_signoff()
+    builders = _touch_builders(
+        angle_key, observation, company, industry, variant, tenant, contact_first_name
+    )
 
-    t1_body = _assemble_email(angle_key, observation, company, industry, variant, copy, signature)
-    t1_subject = _assemble_subject(copy, company, variant)
+    variant_key, plan = resolve_touch_plan(tenant, sequence_variant)
 
-    t2_body = copy.followup_bodies[variant].format(company=company, industry=industry)
-    t2_subject = copy.followup_subjects[variant].format(company=company, industry=industry)
+    touches = []
+    for number, (touch_type, day) in enumerate(plan):
+        subject, body, channel, note = builders[touch_type]()
+        touches.append(
+            SequenceTouch(
+                touch_number=number,
+                day=day,
+                channel=channel,
+                subject=subject,
+                body=body,
+                persona=persona,
+                word_count=_word_count(body),
+                note=note,
+            )
+        )
 
-    t3_body = copy.social_proof_bodies[variant].format(company=company, industry=industry)
-    t3_subject = copy.social_proof_subjects[variant].format(company=company, industry=industry)
-
-    t4_body = _assemble_dm(angle_key, observation, company, industry, variant, copy, dm_signoff, contact_first_name)
-
-    t5_body = copy.breakup_bodies[variant].format(company=company, industry=industry)
-    t5_subject = copy.breakup_subjects[variant].format(company=company, industry=industry)
-
-    connect_note = copy.linkedin_connect_notes[variant].format(company=company, industry=industry)
-
-    touches = [
-        SequenceTouch(
-            touch_number=0,
-            day=0,
-            channel="linkedin_connect",
-            body=connect_note,
-            persona=persona,
-            word_count=_word_count(connect_note),
-            note=(
-                "Send as a LinkedIn connection request (no note or brief note only). "
-                "Being connected means your Day 10 DM arrives as a connection message, not cold InMail."
-            ),
-        ),
-        SequenceTouch(
-            touch_number=1, day=0, channel="email",
-            subject=t1_subject, body=t1_body, persona=persona,
-            word_count=_word_count(t1_body),
-        ),
-        SequenceTouch(
-            touch_number=2, day=3, channel="email",
-            subject=t2_subject, body=t2_body, persona=persona,
-            word_count=_word_count(t2_body),
-        ),
-        SequenceTouch(
-            touch_number=3, day=7, channel="email",
-            subject=t3_subject, body=t3_body, persona=persona,
-            word_count=_word_count(t3_body),
-        ),
-        SequenceTouch(
-            touch_number=4, day=10, channel="linkedin",
-            body=t4_body, persona=persona,
-            word_count=_word_count(t4_body),
-            note="Send as a LinkedIn DM (you're now connected from Day 0 request).",
-        ),
-        SequenceTouch(
-            touch_number=5, day=21, channel="email",
-            subject=t5_subject, body=t5_body, persona=persona,
-            word_count=_word_count(t5_body),
-        ),
-    ]
-
-    if tier >= 3:
+    # Built-in plan only: tier-3 accounts drop the social-proof touch (original
+    # behavior). Explicit variant plans are used exactly as configured.
+    if not variant_key and tier >= 3:
         touches = [t for t in touches if t.touch_number != 3]
         for i, t in enumerate(touches):
             t.touch_number = i
@@ -434,6 +472,11 @@ def run_humanizer(state: BDRState) -> dict:
     rec_obs = obs_map.get(rec_angle, obs.angle1_observation)
     tier = enrichment.icp.tier if enrichment.icp else 2
 
+    requested_variant = (state.get("sequence_variant") or "").strip()
+    variant_key, _plan = resolve_touch_plan(tenant, requested_variant)
+    if variant_key:
+        trace.append(f"Humanizer: using sequence track '{variant_key}'")
+
     sequence = _build_sequence(
         angle_key=rec_angle,
         observation=rec_obs,
@@ -443,6 +486,7 @@ def run_humanizer(state: BDRState) -> dict:
         persona=strategy.cpo_hypothesis,
         tenant=tenant,
         contact_first_name=contact_first_name,
+        sequence_variant=requested_variant,
     )
     sequence = humanize_sequence(sequence)
 

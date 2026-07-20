@@ -51,6 +51,9 @@ jobs:
       - name: Config override checks (LLM mocked)
         run: python scripts/check_config_overrides.py
 
+      - name: Sequence variant checks (offline humanizer)
+        run: python scripts/check_variants.py
+
   docker-build:
     name: Docker image builds
     runs-on: ubuntu-latest

@@ -172,6 +172,7 @@ try:
         tenant=tenant,
         sync_to_notion=inputs.sync_to_notion,
         trigger_headline=inputs.trigger_headline,
+        sequence_variant=inputs.sequence_variant,
     ):
         # Infer stage progress from which slices the state has populated.
         new_done: list[str] = []

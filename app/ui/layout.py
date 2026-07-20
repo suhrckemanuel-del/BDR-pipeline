@@ -31,6 +31,7 @@ class SidebarInputs:
     sync_to_notion: bool
     run_clicked: bool
     clear_last_result_clicked: bool
+    sequence_variant: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +121,22 @@ def render_sidebar(
             key="ui_trigger",
         )
 
+        sequence_variant = ""
+        variants_cfg = tenant.sequence_variants
+        if variants_cfg is not None:
+            variant_keys = [v.key for v in variants_cfg.variants]
+            default_key = variants_cfg.resolve().key
+            sequence_variant = str(
+                st.selectbox(
+                    "Sequence track",
+                    options=variant_keys,
+                    index=variant_keys.index(default_key),
+                    format_func=lambda k: variants_cfg.by_key(k).name if variants_cfg.by_key(k) else k,
+                    key="ui_sequence_variant",
+                    help="Which of this tenant's sequence tracks the humanizer assembles.",
+                )
+            )
+
         _provider_label = {"notion": "Notion", "hubspot": "HubSpot", "salesforce": "Salesforce", "pipedrive": "Pipedrive"}.get(tenant.crm.provider, "CRM")
         sync_to_notion = st.checkbox(
             f"Sync to {_provider_label}",
@@ -160,6 +177,7 @@ def render_sidebar(
         sync_to_notion=sync_to_notion,
         run_clicked=run_clicked,
         clear_last_result_clicked=clear_last_result_clicked,
+        sequence_variant=sequence_variant,
     )
 
 

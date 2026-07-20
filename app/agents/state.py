@@ -287,6 +287,7 @@ class BDRState(TypedDict, total=False):
     sync_to_notion: bool
     trigger_headline: str
     prospect_notes: str
+    sequence_variant: str  # key of the tenant sequence track to use ("" = default)
     target_profile: TargetProfile
 
     # Agent outputs

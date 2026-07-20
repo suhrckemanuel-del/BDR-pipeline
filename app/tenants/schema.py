@@ -349,6 +349,86 @@ class HumanizerCopy(BaseModel):
         raise KeyError(f"No copy for angle {key!r}")
 
 
+SEQUENCE_TOUCH_TYPES = (
+    "linkedin_connect",
+    "intro_email",
+    "followup_email",
+    "social_proof_email",
+    "linkedin_dm",
+    "breakup_email",
+)
+
+
+class SequenceTouchPlan(BaseModel):
+    """One planned touch in a sequence variant — a copy-bank slot plus a day."""
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal[
+        "linkedin_connect",
+        "intro_email",
+        "followup_email",
+        "social_proof_email",
+        "linkedin_dm",
+        "breakup_email",
+    ] = Field(description="Which copy bank fills this touch.")
+    day: int = Field(ge=0, description="Day offset from sequence start.")
+
+
+class SequenceVariant(BaseModel):
+    """One named sequence track (e.g. founder vs. enterprise)."""
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(
+        pattern=r"^[a-z0-9_-]+$",
+        description="Stable URL-safe identifier for this track.",
+    )
+    name: str = Field(description="Human-readable track name shown in the UI.")
+    description: str = Field(default="", description="One line on when to use this track.")
+    touches: List[SequenceTouchPlan] = Field(
+        min_length=1,
+        description="Touch plan, in send order. Days must be non-decreasing.",
+    )
+
+    @field_validator("touches")
+    @classmethod
+    def _check_days_ordered(cls, v: List[SequenceTouchPlan]) -> List[SequenceTouchPlan]:
+        days = [t.day for t in v]
+        if days != sorted(days):
+            raise ValueError(f"touch days must be non-decreasing, got {days}")
+        return v
+
+
+class SequenceVariantsConfig(BaseModel):
+    """Optional named sequence tracks. Absent = the built-in 6-touch plan."""
+    model_config = ConfigDict(extra="forbid")
+
+    default: Optional[str] = Field(
+        default=None,
+        description="Key of the track used when a run doesn't pick one. Defaults to the first.",
+    )
+    variants: List[SequenceVariant] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check_keys(self) -> "SequenceVariantsConfig":
+        keys = [v.key for v in self.variants]
+        if len(keys) != len(set(keys)):
+            raise ValueError(f"variant keys must be unique, got {keys}")
+        if self.default is not None and self.default not in keys:
+            raise ValueError(f"default {self.default!r} is not a variant key ({keys})")
+        return self
+
+    def by_key(self, key: str) -> Optional[SequenceVariant]:
+        return next((v for v in self.variants if v.key == key), None)
+
+    def resolve(self, key: str = "") -> SequenceVariant:
+        """The variant for a requested key, falling back to default, then first."""
+        return (
+            (self.by_key(key) if key else None)
+            or (self.by_key(self.default) if self.default else None)
+            or self.variants[0]
+        )
+
+
 class ModelsConfig(BaseModel):
     """Optional per-agent Claude model overrides.
 
@@ -388,6 +468,13 @@ class TenantConfig(BaseModel):
     outreach: OutreachToolsConfig = Field(default_factory=OutreachToolsConfig)
     angles: List[OutreachAngle] = Field(min_length=3, max_length=3)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
+    sequence_variants: Optional[SequenceVariantsConfig] = Field(
+        default=None,
+        description=(
+            "Optional named sequence tracks (e.g. founder vs. enterprise). "
+            "Absent keeps the built-in 6-touch plan."
+        ),
+    )
 
     # Loaded from sibling files, not config.yaml itself
     icp_definition: str = Field(default="", description="Loaded from icp.txt.")

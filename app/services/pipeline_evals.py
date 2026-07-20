@@ -163,12 +163,19 @@ def evaluate_state(state: dict, *, strict: bool = True) -> EvalReport:
     touches = _get(sequence, "touches") or []
     add(EvalCheck("sequence_present", bool(touches), "fail"))
     if touches:
+        # Tenants with sequence variants define their own touch count; the
+        # expected count is the active track's plan length.
+        variants = getattr(state.get("tenant"), "sequence_variants", None)
+        if variants is not None:
+            expected_touches = len(variants.resolve(state.get("sequence_variant") or "").touches)
+        else:
+            expected_touches = EXPECTED_TOUCHES
         add(
             EvalCheck(
                 "sequence_touch_count",
-                len(touches) == EXPECTED_TOUCHES,
+                len(touches) == expected_touches,
                 completeness,
-                f"{len(touches)}/{EXPECTED_TOUCHES} touches",
+                f"{len(touches)}/{expected_touches} touches",
             )
         )
         days = [_get(t, "day", 0) for t in touches]
