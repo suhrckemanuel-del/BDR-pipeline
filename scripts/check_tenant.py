@@ -40,6 +40,17 @@ def check(tenant_id: str) -> bool:
     icp_lines = len(t.icp_definition.splitlines())
     print(f"  icp.txt:   {icp_lines} lines")
     print(f"  prospects: {t.prospects_csv} (exists: {t.prospects_csv.exists()})")
+    model_overrides = {
+        agent: model
+        for agent, model in getattr(t, "models", None).model_dump().items()
+        if model
+    } if getattr(t, "models", None) else {}
+    if model_overrides:
+        print(f"  models:    {model_overrides}")
+    templates = getattr(t.icp, "exa_query_templates", None) or []
+    if templates:
+        example = templates[0].replace("{company}", "Acme Corp").replace("{industry}", "SaaS")
+        print(f"  exa templates: {len(templates)} configured (e.g. {example!r})")
     print(f"  OK")
     return True
 

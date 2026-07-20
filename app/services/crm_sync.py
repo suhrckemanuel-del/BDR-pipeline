@@ -138,7 +138,9 @@ def push_to_notion(state: BDRState) -> CRMSyncResult:
     Skips (does not error) if the user disabled sync or env vars are missing.
     """
     if not state.get("sync_to_notion", False):
-        return CRMSyncResult(success=False, skipped=True, skip_reason="Sync disabled in UI.")
+        return CRMSyncResult(
+            success=False, skipped=True, skip_reason="Sync disabled in UI.", provider="notion"
+        )
 
     token = os.environ.get("NOTION_API_KEY", "")
     # Tenant config overrides env var when set; otherwise fall back to env.
@@ -152,19 +154,20 @@ def push_to_notion(state: BDRState) -> CRMSyncResult:
             success=False,
             skipped=True,
             skip_reason="NOTION_API_KEY or NOTION_DATABASE_ID missing in .env.",
+            provider="notion",
         )
 
     try:
         from notion_client import Client  # type: ignore
     except ImportError:
-        return CRMSyncResult(success=False, error="notion-client not installed.")
+        return CRMSyncResult(success=False, error="notion-client not installed.", provider="notion")
 
     client = Client(auth=token)
 
     try:
         parent, db_meta = _resolve_notion_parent_and_schema(client, db_id)
     except Exception as exc:
-        return CRMSyncResult(success=False, error=f"Notion DB retrieve failed: {exc}")
+        return CRMSyncResult(success=False, error=f"Notion DB retrieve failed: {exc}", provider="notion")
 
     # DEBUG: surface the raw properties so we can see the actual structure
     import json as _json  # noqa: F401
@@ -175,7 +178,8 @@ def push_to_notion(state: BDRState) -> CRMSyncResult:
     if not title_prop:
         return CRMSyncResult(
             success=False,
-            error=f"No title property found. DB properties: {props_debug}"
+            error=f"No title property found. DB properties: {props_debug}",
+            provider="notion",
         )
 
     enrichment = state.get("enrichment")
@@ -195,30 +199,66 @@ def push_to_notion(state: BDRState) -> CRMSyncResult:
             children=blocks[:90],  # Notion caps children per request at 100
         )
     except Exception as exc:
-        return CRMSyncResult(success=False, error=f"Notion page create failed: {exc}")
+        return CRMSyncResult(success=False, error=f"Notion page create failed: {exc}", provider="notion")
 
     return CRMSyncResult(
         success=True,
         page_id=page.get("id", ""),
         page_url=page.get("url", ""),
+        provider="notion",
     )
 
 
 def run_crm_sync(state: BDRState) -> dict:
-    """LangGraph node - push to Notion, attach result to state."""
+    """LangGraph node - dispatch to the tenant's CRM provider, attach result to state."""
     if state.get("error"):
         return {}
     trace = list(state.get("agent_trace", []))
+
+    tenant = state.get("tenant")
+    provider = tenant.crm.provider if tenant is not None else "notion"
+    provider_label = {
+        "notion": "Notion",
+        "hubspot": "HubSpot",
+        "salesforce": "Salesforce",
+        "pipedrive": "Pipedrive",
+    }.get(provider, provider)
+
+    if provider == "none":
+        result = CRMSyncResult(
+            success=False,
+            skipped=True,
+            skip_reason="crm.provider is 'none' for this tenant.",
+            provider="none",
+        )
+        trace.append(f"CRM Sync: skipped - {result.skip_reason}")
+        return {"crm_result": result, "agent_trace": trace}
+
     if state.get("sync_to_notion"):
-        trace.append("CRM Sync: pushing to Notion database")
+        trace.append(f"CRM Sync: pushing to {provider_label}")
     else:
         trace.append("CRM Sync: skipped (sync toggle off)")
 
-    result = push_to_notion(state)
+    # Lazy imports so the Notion-only path never touches the other modules.
+    if provider == "hubspot":
+        from app.services.hubspot_sync import push_to_hubspot
+
+        result = push_to_hubspot(state)
+    elif provider == "salesforce":
+        from app.services.salesforce_sync import push_to_salesforce
+
+        result = push_to_salesforce(state)
+    elif provider == "pipedrive":
+        from app.services.pipedrive_sync import push_to_pipedrive
+
+        result = push_to_pipedrive(state)
+    else:
+        result = push_to_notion(state)
+
     if result.skipped:
         trace.append(f"CRM Sync: skipped - {result.skip_reason}")
     elif result.success:
-        trace.append("CRM Sync: page created in Notion")
+        trace.append(f"CRM Sync: record created in {provider_label}")
     else:
         trace.append(f"CRM Sync: failed - {result.error}")
     return {"crm_result": result, "agent_trace": trace}

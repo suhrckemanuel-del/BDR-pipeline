@@ -29,6 +29,14 @@ wizard writes the folder.
 
 This takes ~3 minutes for a working draft.
 
+**From a website** — skip the Q&A entirely: point the wizard at the company's
+site and Claude drafts the whole tenant from the page content, then prints a
+diff-style summary for review before validating.
+
+```bash
+python scripts/onboard_tenant.py --url acme.com --slug acme --sender "Jane Doe"
+```
+
 ### Option B — Copy and edit by hand
 
 ```bash
@@ -95,6 +103,43 @@ icp:
   tier3_label: "Tier 3 — Below Threshold"
   tier_criteria: >                    # one-line summary used in ICP prompt
     Tier 1 = $50M+ ARR. Tier 2 = $10–50M. Tier 3 = below.
+  scoring_weights:                    # optional — relative weights for the 0-100
+    icp_fit: 25                       # composite account score. Omit the block to
+    pain_evidence: 25                 # keep the default 25/25/20/20/10 split.
+    trigger_strength: 20              # Weights are normalized, so any positive
+    contact_confidence: 20            # mix works; all five keys are optional.
+    evidence_quality: 10
+  exa_query_templates: []             # optional — Exa search templates with
+                                      # {company}/{industry} placeholders. First
+                                      # template = news slot (5 results), rest =
+                                      # jobs slot (3 each). Empty keeps the
+                                      # built-in persona-driven queries.
+
+models:                               # optional — per-agent Claude model overrides.
+  enrichment: null                    # default: Haiku (summaries + ICP tiering)
+  strategist: null                    # default: Sonnet
+  humanizer: null                     # default: Sonnet
+  critic: null                        # default: Sonnet
+
+sequence_variants:                    # optional — named sequence tracks. Omit the
+  default: founder                    # block to keep the built-in 6-touch plan.
+  variants:                           # Touch types map to the existing copy banks:
+    - key: founder                    # linkedin_connect | intro_email |
+      name: Founder track             # followup_email | social_proof_email |
+      description: Short, email-only  # linkedin_dm | breakup_email.
+      touches:                        # Days must be non-decreasing.
+        - {type: intro_email, day: 0}
+        - {type: followup_email, day: 2}
+        - {type: breakup_email, day: 7}
+    - key: enterprise
+      name: Enterprise track
+      touches:
+        - {type: linkedin_connect, day: 0}
+        - {type: intro_email, day: 1}
+        - {type: followup_email, day: 4}
+        - {type: social_proof_email, day: 10}
+        - {type: linkedin_dm, day: 14}
+        - {type: breakup_email, day: 30}
 
 sender:
   name: Your Name                     # required — used in email signature
@@ -105,8 +150,25 @@ sender:
   dm_signoff: Your Name               # optional — defaults to first name
 
 crm:
-  enabled: false                      # show Notion sync UI for this tenant?
-  notion_database_id: null            # optional override of NOTION_DATABASE_ID
+  enabled: false                      # show the CRM sync UI for this tenant?
+  provider: notion                    # notion (default) | hubspot | salesforce | pipedrive | none
+  notion_database_id: null            # notion only — optional override of NOTION_DATABASE_ID
+  hubspot_token_env: null             # hubspot only — name of the env var holding this
+                                      # tenant's private-app token (falls back to
+                                      # HUBSPOT_ACCESS_TOKEN). Never put tokens here.
+  salesforce_token_env: null          # salesforce only — env var name for the access token
+                                      # (falls back to SALESFORCE_ACCESS_TOKEN)
+  salesforce_instance_url: null       # salesforce only — e.g. https://acme.my.salesforce.com
+                                      # (not a secret; falls back to SALESFORCE_INSTANCE_URL)
+  pipedrive_token_env: null           # pipedrive only — env var name for the API token
+                                      # (falls back to PIPEDRIVE_API_TOKEN)
+
+outreach:                             # optional — live push to sending tools
+  instantly_campaign_id: null         # Instantly campaign that pushed leads join;
+  smartlead_campaign_id: null         # Smartlead campaign id. Unset = push disabled
+  instantly_api_key_env: null         # optional env-var names for per-tenant API keys
+  smartlead_api_key_env: null         # (fall back to INSTANTLY_API_KEY / SMARTLEAD_API_KEY).
+                                      # Never put keys themselves in config files.
 ```
 
 The schema is enforced (`extra="forbid"` — unknown keys raise validation errors).
@@ -228,9 +290,6 @@ disabled.
 
 ## What the schema does NOT include (yet)
 
-- Multiple sequence variants per tenant (founder track vs. enterprise track)
-- Per-tenant LLM model overrides
-- Per-tenant Exa query templates
 - Localization (all copy is English-only)
 
 These are deliberate cuts for v1. The fastest way to add them is to extend

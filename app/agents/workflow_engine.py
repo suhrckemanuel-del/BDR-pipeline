@@ -65,6 +65,7 @@ def _build_initial_state(
     sync_to_notion: bool,
     trigger_headline: str = "",
     prospect_notes: str = "",
+    sequence_variant: str = "",
 ) -> BDRState:
     return {
         "tenant": tenant,
@@ -73,6 +74,7 @@ def _build_initial_state(
         "sync_to_notion": bool(sync_to_notion),
         "trigger_headline": trigger_headline.strip(),
         "prospect_notes": prospect_notes.strip(),
+        "sequence_variant": sequence_variant.strip(),
         "agent_trace": [],
         "critic_retries": 0,
     }
@@ -86,6 +88,7 @@ def run_workflow_stream(
     sync_to_notion: bool = False,
     trigger_headline: str = "",
     prospect_notes: str = "",
+    sequence_variant: str = "",
     thread_id: str | None = None,
 ) -> Generator[Tuple[str, dict], None, None]:
     """
@@ -97,7 +100,7 @@ def run_workflow_stream(
     slug = thread_id or f"{tenant.tenant_id}_{company_slug}"
 
     initial = _build_initial_state(
-        company, industry, tenant, sync_to_notion, trigger_headline, prospect_notes
+        company, industry, tenant, sync_to_notion, trigger_headline, prospect_notes, sequence_variant
     )
 
     config: dict = {}
@@ -118,9 +121,10 @@ def run_workflow(
     sync_to_notion: bool = False,
     trigger_headline: str = "",
     prospect_notes: str = "",
+    sequence_variant: str = "",
 ) -> dict:
     """Synchronous variant — returns the final state dict."""
     initial = _build_initial_state(
-        company, industry, tenant, sync_to_notion, trigger_headline, prospect_notes
+        company, industry, tenant, sync_to_notion, trigger_headline, prospect_notes, sequence_variant
     )
     return app.invoke(initial)

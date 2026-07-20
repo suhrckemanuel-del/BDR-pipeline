@@ -50,6 +50,7 @@ tmp_*.png
 tmp_*.html
 
 # Generated / runtime artifacts
+exports/
 pipeline/checkpoints.db
 *.db
 *.sqlite
@@ -61,3 +62,6 @@ tenants/*/data/insights.csv
 # Office / temp files
 *.tmp
 ~$*
+
+# Claude Code agent worktrees (transient)
+.claude/worktrees/

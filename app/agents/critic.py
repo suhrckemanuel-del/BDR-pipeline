@@ -25,6 +25,8 @@ from pydantic import BaseModel, Field, model_validator
 from app.services.humanizer_rules import humanize
 from app.tenants.schema import TenantConfig
 
+from .model_config import resolve_model
+
 from .state import BDRState, ProspectCard, SequenceTouch
 
 logger = logging.getLogger(__name__)
@@ -517,7 +519,7 @@ def run_critic(state: BDRState) -> dict:
             return {"agent_trace": trace}
 
         llm = ChatAnthropic(
-            model=MODEL,
+            model=resolve_model(tenant, "critic", MODEL),
             api_key=api_key,
             max_tokens=4000,
             temperature=0.2,
@@ -587,7 +589,7 @@ def run_critic(state: BDRState) -> dict:
             }
 
             rewriter_llm = ChatAnthropic(
-                model=MODEL,
+                model=resolve_model(tenant, "critic", MODEL),
                 api_key=api_key,
                 max_tokens=300,
                 temperature=0.4,

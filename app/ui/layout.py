@@ -31,6 +31,7 @@ class SidebarInputs:
     sync_to_notion: bool
     run_clicked: bool
     clear_last_result_clicked: bool
+    sequence_variant: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -120,11 +121,28 @@ def render_sidebar(
             key="ui_trigger",
         )
 
+        sequence_variant = ""
+        variants_cfg = tenant.sequence_variants
+        if variants_cfg is not None:
+            variant_keys = [v.key for v in variants_cfg.variants]
+            default_key = variants_cfg.resolve().key
+            sequence_variant = str(
+                st.selectbox(
+                    "Sequence track",
+                    options=variant_keys,
+                    index=variant_keys.index(default_key),
+                    format_func=lambda k: variants_cfg.by_key(k).name if variants_cfg.by_key(k) else k,
+                    key="ui_sequence_variant",
+                    help="Which of this tenant's sequence tracks the humanizer assembles.",
+                )
+            )
+
+        _provider_label = {"notion": "Notion", "hubspot": "HubSpot", "salesforce": "Salesforce", "pipedrive": "Pipedrive"}.get(tenant.crm.provider, "CRM")
         sync_to_notion = st.checkbox(
-            "Sync to Notion",
-            value=tenant.crm.enabled,
-            disabled=not tenant.crm.enabled,
-            help="Set crm.enabled: true in tenant config.yaml to enable.",
+            f"Sync to {_provider_label}",
+            value=tenant.crm.enabled and tenant.crm.provider != "none",
+            disabled=not tenant.crm.enabled or tenant.crm.provider == "none",
+            help="Set crm.enabled: true and crm.provider (notion/hubspot) in tenant config.yaml to enable.",
         )
 
         run_clicked = st.button(
@@ -159,6 +177,7 @@ def render_sidebar(
         sync_to_notion=sync_to_notion,
         run_clicked=run_clicked,
         clear_last_result_clicked=clear_last_result_clicked,
+        sequence_variant=sequence_variant,
     )
 
 
@@ -268,7 +287,7 @@ def render_main(tenant: TenantConfig, state: dict) -> None:
 
     account_score = getattr(enrichment, "account_score", None) if enrichment else None
     if account_score:
-        C.account_score_panel(account_score)
+        C.account_score_panel(account_score, expandable=True)
 
     if critic_result:
         C.quality_gate_panel(critic_result)
@@ -300,10 +319,15 @@ def render_main(tenant: TenantConfig, state: dict) -> None:
 
     # CRM sync footer
     if crm_result and not getattr(crm_result, "skipped", False):
+        _provider = getattr(crm_result, "provider", "") or "notion"
+        _provider_label = {"notion": "Notion", "hubspot": "HubSpot", "salesforce": "Salesforce", "pipedrive": "Pipedrive"}.get(_provider, "CRM")
         if getattr(crm_result, "success", False):
-            st.success(f"Synced to Notion: {crm_result.page_url}")
+            if getattr(crm_result, "page_url", ""):
+                st.success(f"Synced to {_provider_label}: {crm_result.page_url}")
+            else:
+                st.success(f"Synced to {_provider_label} (company id: {crm_result.page_id})")
         elif getattr(crm_result, "error", ""):
-            st.warning(f"Notion sync failed: {crm_result.error}")
+            st.warning(f"{_provider_label} sync failed: {crm_result.error}")
 
 
 # ---------------------------------------------------------------------------

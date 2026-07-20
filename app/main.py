@@ -28,7 +28,7 @@ if str(ROOT) not in sys.path:
 # Hydrate env from Streamlit secrets when running on Streamlit Cloud
 _SECRET_KEYS = (
     "ANTHROPIC_API_KEY", "EXA_API_KEY", "HUNTER_API_KEY",
-    "NOTION_API_KEY", "NOTION_DATABASE_ID",
+    "NOTION_API_KEY", "NOTION_DATABASE_ID", "HUBSPOT_ACCESS_TOKEN",
     "GMAIL_SENDER", "GMAIL_APP_PASSWORD",
     "LANGCHAIN_API_KEY", "BDR_TENANT",
 )
@@ -49,6 +49,7 @@ from app.tenants import list_tenants, load_tenant  # noqa: E402
 from app.ui import inject_css, render_sidebar, render_main, render_empty  # noqa: E402
 from app.ui.layout import render_running  # noqa: E402
 from app.ui.components import STAGE_LABELS  # noqa: E402
+from app.ui import ops  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Tenant resolution (must precede st.set_page_config)
@@ -84,6 +85,24 @@ def _build_workflow_for(tenant_id: str):  # noqa: ARG001  (cached per tenant)
     from app.agents.workflow_engine import build_workflow
     return build_workflow(use_checkpointer=False)
 
+
+# ---------------------------------------------------------------------------
+# Workspace nav — Run / Batch / Tracker / History
+# ---------------------------------------------------------------------------
+_view = ops.render_workspace_nav()
+
+if _view != "Run pipeline":
+    _selection = ops.render_ops_sidebar(_default_tenant, _AVAILABLE, pin_locked=bool(_PIN))
+    if _selection != _DEFAULT:
+        st.session_state["active_tenant"] = _selection
+        st.rerun()
+    if _view == "Batch runs":
+        ops.render_batch_view(_default_tenant)
+    elif _view == "Pipeline tracker":
+        ops.render_tracker_view(_default_tenant)
+    else:
+        ops.render_history_view(_default_tenant)
+    st.stop()
 
 # ---------------------------------------------------------------------------
 # Sidebar — collect inputs
@@ -138,6 +157,7 @@ workflow = _build_workflow_for(tenant.tenant_id)
 
 panel = st.empty()
 final_state: dict | None = None
+_run_started = datetime.now(timezone.utc)
 
 # Map trace lines back to stage keys so the nav can light up the active stage.
 _STAGE_KEYS = [k for k, _ in STAGE_LABELS]
@@ -152,6 +172,7 @@ try:
         tenant=tenant,
         sync_to_notion=inputs.sync_to_notion,
         trigger_headline=inputs.trigger_headline,
+        sequence_variant=inputs.sequence_variant,
     ):
         # Infer stage progress from which slices the state has populated.
         new_done: list[str] = []
@@ -191,6 +212,28 @@ st.session_state["last_industry"] = final_state.get("industry") or inputs.indust
 st.session_state["last_run_completed_at"] = datetime.now(timezone.utc).isoformat()
 
 # ---------------------------------------------------------------------------
+# Eval gates + persistence — every run is scored and saved to SQLite
+# ---------------------------------------------------------------------------
+from app.services import store  # noqa: E402
+from app.services.pipeline_evals import evaluate_state  # noqa: E402
+
+_eval_report = evaluate_state(final_state, strict=True)
+_runtime = (datetime.now(timezone.utc) - _run_started).total_seconds()
+try:
+    _run_id = store.record_run(
+        final_state,
+        source="ui",
+        mode="live",
+        runtime_seconds=_runtime,
+        eval_passed=_eval_report.passed,
+        eval_failures=_eval_report.failure_names(),
+    )
+    store.upsert_prospect_from_state(final_state, _run_id, eval_passed=_eval_report.passed)
+except Exception as _persist_exc:  # persistence must never take down the result view
+    st.warning(f"Run completed but could not be persisted: {_persist_exc}")
+
+# ---------------------------------------------------------------------------
 # Render results
 # ---------------------------------------------------------------------------
+ops.render_eval_panel(_eval_report)
 render_main(tenant, final_state)
