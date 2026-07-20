@@ -130,7 +130,7 @@ def render_batch_view(tenant: TenantConfig) -> None:
         max_rows = len(prospects or []) or 1
         limit = st.number_input("Max prospects", min_value=1, max_value=max(max_rows, 1), value=min(max_rows, 25))
     with col_notion:
-        _provider_label = {"notion": "Notion", "hubspot": "HubSpot"}.get(tenant.crm.provider, "CRM")
+        _provider_label = {"notion": "Notion", "hubspot": "HubSpot", "salesforce": "Salesforce", "pipedrive": "Pipedrive"}.get(tenant.crm.provider, "CRM")
         sync_to_notion = st.checkbox(
             f"Sync to {_provider_label}",
             value=False,

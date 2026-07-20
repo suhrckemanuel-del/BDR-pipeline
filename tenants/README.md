@@ -131,11 +131,17 @@ sender:
 
 crm:
   enabled: false                      # show the CRM sync UI for this tenant?
-  provider: notion                    # notion (default) | hubspot | none
+  provider: notion                    # notion (default) | hubspot | salesforce | pipedrive | none
   notion_database_id: null            # notion only — optional override of NOTION_DATABASE_ID
   hubspot_token_env: null             # hubspot only — name of the env var holding this
                                       # tenant's private-app token (falls back to
                                       # HUBSPOT_ACCESS_TOKEN). Never put tokens here.
+  salesforce_token_env: null          # salesforce only — env var name for the access token
+                                      # (falls back to SALESFORCE_ACCESS_TOKEN)
+  salesforce_instance_url: null       # salesforce only — e.g. https://acme.my.salesforce.com
+                                      # (not a secret; falls back to SALESFORCE_INSTANCE_URL)
+  pipedrive_token_env: null           # pipedrive only — env var name for the API token
+                                      # (falls back to PIPEDRIVE_API_TOKEN)
 
 outreach:                             # optional — live push to sending tools
   instantly_campaign_id: null         # Instantly campaign that pushed leads join;

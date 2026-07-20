@@ -69,7 +69,7 @@ class CRMConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = Field(default=False, description="Whether to show Notion sync UI for this tenant.")
-    provider: Literal["notion", "hubspot", "none"] = Field(
+    provider: Literal["notion", "hubspot", "salesforce", "pipedrive", "none"] = Field(
         default="notion",
         description="Which CRM the crm_sync node targets. Default preserves the original Notion behavior.",
     )
@@ -82,6 +82,27 @@ class CRMConfig(BaseModel):
         description=(
             "If set, name of the env var holding this tenant's HubSpot private-app token. "
             "Falls back to HUBSPOT_ACCESS_TOKEN. Never put the token itself in config.yaml."
+        ),
+    )
+    salesforce_token_env: Optional[str] = Field(
+        default=None,
+        description=(
+            "If set, name of the env var holding this tenant's Salesforce access token. "
+            "Falls back to SALESFORCE_ACCESS_TOKEN. Never put the token itself in config.yaml."
+        ),
+    )
+    salesforce_instance_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Salesforce instance URL (e.g. https://acme.my.salesforce.com). Not a secret, so it "
+            "may live in config; falls back to the SALESFORCE_INSTANCE_URL env var."
+        ),
+    )
+    pipedrive_token_env: Optional[str] = Field(
+        default=None,
+        description=(
+            "If set, name of the env var holding this tenant's Pipedrive API token. "
+            "Falls back to PIPEDRIVE_API_TOKEN. Never put the token itself in config.yaml."
         ),
     )
 

@@ -80,8 +80,12 @@ def _api(method: str, path: str, token: str, payload: dict | None = None) -> dic
     return response.json() if response.text else {}
 
 
-def _build_note_body(state: BDRState) -> str:
-    """Plain-text mirror of crm_sync._build_blocks() — the full prospect payload."""
+def build_note_body(state: BDRState, max_chars: int = NOTE_BODY_MAX_CHARS) -> str:
+    """Plain-text mirror of crm_sync._build_blocks() — the full prospect payload.
+
+    Shared by every token-based connector (HubSpot, Salesforce, Pipedrive):
+    the prospect card is free text, so no per-CRM schema match is required.
+    """
     enrichment = state.get("enrichment")
     strategy = state.get("strategy")
     card = state.get("card")
@@ -142,7 +146,7 @@ def _build_note_body(state: BDRState) -> str:
         lines.append(f"Email: {top_contact.email or '-'}")
         lines.append(f"Confidence: {top_contact.confidence}")
 
-    return "\n".join(lines)[:NOTE_BODY_MAX_CHARS]
+    return "\n".join(lines)[:max_chars]
 
 
 def _find_company(token: str, company: str, domain: str) -> str:
@@ -270,7 +274,7 @@ def push_to_hubspot(state: BDRState, *, dry_run: bool = False) -> CRMSyncResult:
     domain = enrichment.domain if enrichment else ""
     top_contact = enrichment.contacts[0] if enrichment and enrichment.contacts else None
 
-    note_body = _build_note_body(state)
+    note_body = build_note_body(state)
 
     if dry_run:
         # Everything above is built; nothing below runs — zero HTTP calls.

@@ -26,7 +26,7 @@ os.environ.setdefault("BDR_DB_PATH", str(Path(tempfile.gettempdir()) / "bdr-chec
 from pydantic import ValidationError  # noqa: E402
 
 from app.agents.state import CRMSyncResult  # noqa: E402
-from app.services import crm_sync, hubspot_sync  # noqa: E402
+from app.services import crm_sync, hubspot_sync, pipedrive_sync, salesforce_sync  # noqa: E402
 from app.services.demo_eval import build_sample_state  # noqa: E402
 from app.tenants import load_tenant  # noqa: E402
 from app.tenants.schema import CRMConfig  # noqa: E402
@@ -83,12 +83,14 @@ def check_schema_compat() -> None:
     assert CRMConfig().provider == "notion", "default provider must stay notion"
     CRMConfig(enabled=True, notion_database_id="x")  # pre-provider configs still validate
     CRMConfig(provider="hubspot", hubspot_token_env="ACME_HS")
+    CRMConfig(provider="salesforce", salesforce_token_env="ACME_SF", salesforce_instance_url="https://acme.my.salesforce.com")
+    CRMConfig(provider="pipedrive", pipedrive_token_env="ACME_PD")
     try:
-        CRMConfig(provider="salesforce")
+        CRMConfig(provider="zoho")
     except ValidationError:
         pass
     else:
-        raise AssertionError("provider='salesforce' should be rejected")
+        raise AssertionError("provider='zoho' should be rejected")
     tenant = load_tenant("demo")
     assert tenant.crm.provider == "notion", "demo tenant (no provider key) must default to notion"
 
@@ -209,6 +211,145 @@ def check_api_error_becomes_result() -> None:
     assert result.provider == "hubspot"
 
 
+def check_salesforce_connector() -> None:
+    # Skip paths: toggle off, then missing token/instance URL.
+    result = salesforce_sync.push_to_salesforce({"sync_to_notion": False})
+    assert result.skipped and result.provider == "salesforce"
+    for key in ("SALESFORCE_ACCESS_TOKEN", "SALESFORCE_INSTANCE_URL"):
+        os.environ.pop(key, None)
+    result = salesforce_sync.push_to_salesforce({"sync_to_notion": True, "company": "X"})
+    assert result.skipped and "SALESFORCE_ACCESS_TOKEN" in result.skip_reason
+
+    # Dry run: everything built, zero HTTP.
+    def _boom(method, path, token, instance_url, payload=None):
+        raise AssertionError(f"HTTP call attempted during dry run: {method} {path}")
+
+    original = salesforce_sync._api
+    salesforce_sync._api = _boom
+    try:
+        result = salesforce_sync.push_to_salesforce(_sample_state(), dry_run=True)
+        assert result.success and result.dry_run and result.page_id == "dry-run"
+    finally:
+        salesforce_sync._api = original
+
+    # Full mocked push: account search -> create, contact search -> create, note.
+    class SFRecorder:
+        def __init__(self):
+            self.calls: list[tuple[str, str, dict | None]] = []
+
+        def __call__(self, method, path, token, instance_url, payload=None):
+            self.calls.append((method, path, payload))
+            if path.startswith(f"/services/data/{salesforce_sync.API_VERSION}/query"):
+                return {"records": []}
+            if path.endswith("/sobjects/Account"):
+                return {"id": "A1"}
+            if path.endswith("/sobjects/Contact"):
+                return {"id": "C1"}
+            if path.endswith("/sobjects/Note"):
+                return {"id": "N1"}
+            raise AssertionError(f"unexpected Salesforce API path: {path}")
+
+    recorder = SFRecorder()
+    salesforce_sync._api = recorder
+    try:
+        os.environ["SALESFORCE_ACCESS_TOKEN"] = "fake-token-for-check"
+        os.environ["SALESFORCE_INSTANCE_URL"] = "https://check.my.salesforce.com"
+        result = salesforce_sync.push_to_salesforce(_sample_state())
+    finally:
+        salesforce_sync._api = original
+        os.environ.pop("SALESFORCE_ACCESS_TOKEN", None)
+        os.environ.pop("SALESFORCE_INSTANCE_URL", None)
+
+    assert result.success and result.page_id == "A1", f"push failed: {result.error}"
+    kinds = [path.split("/")[-1].split("?")[0] for _, path, _ in recorder.calls]
+    assert kinds == ["query", "Account", "query", "Contact", "Note"], kinds
+    note_payload = recorder.calls[-1][2] or {}
+    assert note_payload["ParentId"] == "A1"
+    assert "Check Co" in note_payload["Body"], "note body must mention the company"
+
+    # API error surfaces as a failed result, not an exception.
+    def _fail(method, path, token, instance_url, payload=None):
+        raise salesforce_sync.SalesforceAPIError(500, "internal boom")
+
+    salesforce_sync._api = _fail
+    try:
+        os.environ["SALESFORCE_ACCESS_TOKEN"] = "fake-token-for-check"
+        os.environ["SALESFORCE_INSTANCE_URL"] = "https://check.my.salesforce.com"
+        result = salesforce_sync.push_to_salesforce(_sample_state())
+    finally:
+        salesforce_sync._api = original
+        os.environ.pop("SALESFORCE_ACCESS_TOKEN", None)
+        os.environ.pop("SALESFORCE_INSTANCE_URL", None)
+    assert not result.success and not result.skipped
+    assert result.error.startswith("Salesforce"), result.error
+
+
+def check_pipedrive_connector() -> None:
+    result = pipedrive_sync.push_to_pipedrive({"sync_to_notion": False})
+    assert result.skipped and result.provider == "pipedrive"
+    os.environ.pop("PIPEDRIVE_API_TOKEN", None)
+    result = pipedrive_sync.push_to_pipedrive({"sync_to_notion": True, "company": "X"})
+    assert result.skipped and "PIPEDRIVE_API_TOKEN" in result.skip_reason
+
+    def _boom(method, path, token, payload=None):
+        raise AssertionError(f"HTTP call attempted during dry run: {method} {path}")
+
+    original = pipedrive_sync._api
+    pipedrive_sync._api = _boom
+    try:
+        result = pipedrive_sync.push_to_pipedrive(_sample_state(), dry_run=True)
+        assert result.success and result.dry_run and result.page_id == "dry-run"
+    finally:
+        pipedrive_sync._api = original
+
+    class PDRecorder:
+        def __init__(self):
+            self.calls: list[tuple[str, str, dict | None]] = []
+
+        def __call__(self, method, path, token, payload=None):
+            self.calls.append((method, path, payload))
+            if path.startswith("/organizations/search") or path.startswith("/persons/search"):
+                return {"data": {"items": []}}
+            if path == "/organizations":
+                return {"data": {"id": 11}}
+            if path == "/persons":
+                return {"data": {"id": 22}}
+            if path == "/notes":
+                return {"data": {"id": 33}}
+            raise AssertionError(f"unexpected Pipedrive API path: {path}")
+
+    recorder = PDRecorder()
+    pipedrive_sync._api = recorder
+    try:
+        os.environ["PIPEDRIVE_API_TOKEN"] = "fake-token-for-check"
+        result = pipedrive_sync.push_to_pipedrive(_sample_state())
+    finally:
+        pipedrive_sync._api = original
+        os.environ.pop("PIPEDRIVE_API_TOKEN", None)
+
+    assert result.success and result.page_id == "11", f"push failed: {result.error}"
+    kinds = [path.split("?")[0] for _, path, _ in recorder.calls]
+    assert kinds == [
+        "/organizations/search", "/organizations", "/persons/search", "/persons", "/notes"
+    ], kinds
+    note_payload = recorder.calls[-1][2] or {}
+    assert note_payload["org_id"] == 11 and note_payload["person_id"] == 22
+    assert "Check Co" in note_payload["content"], "note content must mention the company"
+
+    def _fail(method, path, token, payload=None):
+        raise pipedrive_sync.PipedriveAPIError(500, "internal boom")
+
+    pipedrive_sync._api = _fail
+    try:
+        os.environ["PIPEDRIVE_API_TOKEN"] = "fake-token-for-check"
+        result = pipedrive_sync.push_to_pipedrive(_sample_state())
+    finally:
+        pipedrive_sync._api = original
+        os.environ.pop("PIPEDRIVE_API_TOKEN", None)
+    assert not result.success and not result.skipped
+    assert result.error.startswith("Pipedrive"), result.error
+
+
 def check_dispatcher_routing() -> None:
     calls: list[str] = []
 
@@ -220,31 +361,54 @@ def check_dispatcher_routing() -> None:
         calls.append("hubspot")
         return CRMSyncResult(success=True, provider="hubspot")
 
+    def fake_salesforce(state, *, dry_run=False):
+        calls.append("salesforce")
+        return CRMSyncResult(success=True, provider="salesforce")
+
+    def fake_pipedrive(state, *, dry_run=False):
+        calls.append("pipedrive")
+        return CRMSyncResult(success=True, provider="pipedrive")
+
     original_notion = crm_sync.push_to_notion
     original_hubspot = hubspot_sync.push_to_hubspot
+    original_salesforce = salesforce_sync.push_to_salesforce
+    original_pipedrive = pipedrive_sync.push_to_pipedrive
     crm_sync.push_to_notion = fake_notion
     hubspot_sync.push_to_hubspot = fake_hubspot
+    salesforce_sync.push_to_salesforce = fake_salesforce
+    pipedrive_sync.push_to_pipedrive = fake_pipedrive
     try:
         tenant = load_tenant("demo")
-        for provider in ("hubspot", "notion"):
+        for provider in ("hubspot", "salesforce", "pipedrive", "notion"):
             routed = tenant.model_copy(update={"crm": CRMConfig(provider=provider)})
             out = crm_sync.run_crm_sync({"tenant": routed, "sync_to_notion": True})
             assert out["crm_result"].provider == provider, f"{provider} misrouted"
-        assert calls == ["hubspot", "notion"], calls
+        assert calls == ["hubspot", "salesforce", "pipedrive", "notion"], calls
 
         routed = tenant.model_copy(update={"crm": CRMConfig(provider="none")})
         out = crm_sync.run_crm_sync({"tenant": routed, "sync_to_notion": True})
         assert out["crm_result"].skipped and out["crm_result"].provider == "none"
-        assert calls == ["hubspot", "notion"], "provider=none must call neither connector"
+        assert calls == ["hubspot", "salesforce", "pipedrive", "notion"], "provider=none must call no connector"
 
         assert crm_sync.run_crm_sync({"error": "x"}) == {}, "errored state must return {}"
     finally:
         crm_sync.push_to_notion = original_notion
         hubspot_sync.push_to_hubspot = original_hubspot
+        salesforce_sync.push_to_salesforce = original_salesforce
+        pipedrive_sync.push_to_pipedrive = original_pipedrive
 
 
 def main() -> int:
-    saved_env = {key: os.environ.get(key) for key in ("HUBSPOT_ACCESS_TOKEN", "BDR_CRM_DRY_RUN")}
+    saved_env = {
+        key: os.environ.get(key)
+        for key in (
+            "HUBSPOT_ACCESS_TOKEN",
+            "SALESFORCE_ACCESS_TOKEN",
+            "SALESFORCE_INSTANCE_URL",
+            "PIPEDRIVE_API_TOKEN",
+            "BDR_CRM_DRY_RUN",
+        )
+    }
     os.environ.pop("BDR_CRM_DRY_RUN", None)
     try:
         print("CRM sync offline checks:")
@@ -254,6 +418,8 @@ def main() -> int:
         check("full mocked push (call order, note body, associations)", check_full_mocked_push)
         check("existing company/contact are not recreated", check_existing_company_not_recreated)
         check("API errors surface as failed results, not exceptions", check_api_error_becomes_result)
+        check("salesforce connector (skips, dry run, call order, errors)", check_salesforce_connector)
+        check("pipedrive connector (skips, dry run, call order, errors)", check_pipedrive_connector)
         check("run_crm_sync dispatches by tenant.crm.provider", check_dispatcher_routing)
     finally:
         for key, value in saved_env.items():

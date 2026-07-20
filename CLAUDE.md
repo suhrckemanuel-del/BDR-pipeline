@@ -62,6 +62,8 @@ app/
   services/
     crm_sync.py                 # CRM dispatch node (tenant.crm.provider) + Notion push (schema-agnostic)
     hubspot_sync.py             # HubSpot push: default properties + ProspectCard as an associated Note
+    salesforce_sync.py          # Salesforce push: standard Account/Contact + Note (token + instance URL)
+    pipedrive_sync.py           # Pipedrive push: Organization/Person + Note (API token)
     account_scoring.py          # Composite 0-100 account score: tenant-weighted, deterministic
     sequence_export.py          # Instantly/Smartlead CSV export of queued, eval-passed sequences
     sequence_push.py            # Live API push of eligible leads into Instantly/Smartlead campaigns
@@ -179,7 +181,7 @@ Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 
 **Deterministic variants.** `_variant_index()` hashes (tenant_id + company) to always pick the same proof/CTA variant across reruns. Same prospect → same draft.
 
-**Schema-agnostic CRM sync, provider-dispatched.** `run_crm_sync` dispatches on `tenant.crm.provider` (`notion` default for backward compat, `hubspot`, `none`). The Notion connector discovers the title property dynamically (works with any DB shape; per-tenant override via `tenant.crm.notion_database_id`). The HubSpot connector touches only default portal properties (company name/domain, contact email/name/title) and pushes the full ProspectCard as an associated Note — no custom properties to provision. Tokens never live in config files: `tenant.crm.hubspot_token_env` names an env var, falling back to `HUBSPOT_ACCESS_TOKEN`.
+**Schema-agnostic CRM sync, provider-dispatched.** `run_crm_sync` dispatches on `tenant.crm.provider` (`notion` default for backward compat, `hubspot`, `salesforce`, `pipedrive`, `none`). The Notion connector discovers the title property dynamically (works with any DB shape; per-tenant override via `tenant.crm.notion_database_id`). The token-based connectors (HubSpot, Salesforce, Pipedrive) touch only default/standard objects and fields (company/account/organization name + domain, contact email/name/title) and push the full ProspectCard as an attached Note — no custom properties to provision; the plain-text note body is shared (`hubspot_sync.build_note_body`). Tokens never live in config files: `crm.hubspot_token_env` / `crm.salesforce_token_env` / `crm.pipedrive_token_env` name env vars, falling back to `HUBSPOT_ACCESS_TOKEN` / `SALESFORCE_ACCESS_TOKEN` / `PIPEDRIVE_API_TOKEN` (Salesforce also needs an instance URL: `crm.salesforce_instance_url` or `SALESFORCE_INSTANCE_URL` — a URL, not a secret).
 
 **Sending-tool export, eval-gated.** `sequence_export.py` exports queued prospects to Instantly/Smartlead lead CSVs (per-touch copy as `subject_N`/`body_N`/`day_N` custom columns) — but only when the *latest* run passed the eval gates and a contact email exists; every skip carries a reason. One `exported` event logs per prospect. Fully offline: reads only the SQLite store.
 
@@ -262,4 +264,4 @@ UI flows against a real `streamlit run` server (e.g. Playwright) instead.
 6. ~~HubSpot connector alongside Notion~~ — done (`services/hubspot_sync.py`, `crm.provider` dispatch)
 7. ~~Export queued sequences to sending tools (Instantly/Smartlead)~~ — done (`services/sequence_export.py` + tracker Export action)
 8. ~~Live API push to Instantly/Smartlead~~ — done (`services/sequence_push.py`, tenant `outreach.*` config + tracker Push action)
-9. Salesforce/Pipedrive connectors behind the same `crm.provider` dispatch
+9. ~~Salesforce/Pipedrive connectors behind the same `crm.provider` dispatch~~ — done (`services/salesforce_sync.py` + `services/pipedrive_sync.py`)

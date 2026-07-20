@@ -217,7 +217,12 @@ def run_crm_sync(state: BDRState) -> dict:
 
     tenant = state.get("tenant")
     provider = tenant.crm.provider if tenant is not None else "notion"
-    provider_label = {"notion": "Notion", "hubspot": "HubSpot"}.get(provider, provider)
+    provider_label = {
+        "notion": "Notion",
+        "hubspot": "HubSpot",
+        "salesforce": "Salesforce",
+        "pipedrive": "Pipedrive",
+    }.get(provider, provider)
 
     if provider == "none":
         result = CRMSyncResult(
@@ -234,11 +239,19 @@ def run_crm_sync(state: BDRState) -> dict:
     else:
         trace.append("CRM Sync: skipped (sync toggle off)")
 
+    # Lazy imports so the Notion-only path never touches the other modules.
     if provider == "hubspot":
-        # Lazy import so the Notion-only path never touches the HubSpot module.
         from app.services.hubspot_sync import push_to_hubspot
 
         result = push_to_hubspot(state)
+    elif provider == "salesforce":
+        from app.services.salesforce_sync import push_to_salesforce
+
+        result = push_to_salesforce(state)
+    elif provider == "pipedrive":
+        from app.services.pipedrive_sync import push_to_pipedrive
+
+        result = push_to_pipedrive(state)
     else:
         result = push_to_notion(state)
 

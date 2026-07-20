@@ -120,7 +120,7 @@ def render_sidebar(
             key="ui_trigger",
         )
 
-        _provider_label = {"notion": "Notion", "hubspot": "HubSpot"}.get(tenant.crm.provider, "CRM")
+        _provider_label = {"notion": "Notion", "hubspot": "HubSpot", "salesforce": "Salesforce", "pipedrive": "Pipedrive"}.get(tenant.crm.provider, "CRM")
         sync_to_notion = st.checkbox(
             f"Sync to {_provider_label}",
             value=tenant.crm.enabled and tenant.crm.provider != "none",
@@ -302,7 +302,7 @@ def render_main(tenant: TenantConfig, state: dict) -> None:
     # CRM sync footer
     if crm_result and not getattr(crm_result, "skipped", False):
         _provider = getattr(crm_result, "provider", "") or "notion"
-        _provider_label = {"notion": "Notion", "hubspot": "HubSpot"}.get(_provider, "CRM")
+        _provider_label = {"notion": "Notion", "hubspot": "HubSpot", "salesforce": "Salesforce", "pipedrive": "Pipedrive"}.get(_provider, "CRM")
         if getattr(crm_result, "success", False):
             if getattr(crm_result, "page_url", ""):
                 st.success(f"Synced to {_provider_label}: {crm_result.page_url}")
