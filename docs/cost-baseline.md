@@ -71,12 +71,20 @@ construction on every `ChatAnthropic(...)`; it rides through
 `with_structured_output` wrappers, thread pools, and retries. Zero-LLM runs
 (no API key) merge nothing — the pipeline behaves byte-identically to pre-B0.
 
-## Baseline numbers
+## Baseline numbers**To be filled from the first live run** (deliberately not fabricated: the plan's
 
-**To be filled from the first live run** (deliberately not fabricated: the plan's
 decree is measurement, not estimation). The maintainer's single "press start"
 step for this session is the `run_demo_eval.py --live` command above; paste the
 resulting `Cost per Prospect` section here and the baseline is sealed.
+
+**Since 2026-09-19 the demo tenant runs the OPTIMIZED profile** (B4 cascade on,
+cheap-tier first rater, B3 caching active on every call — see
+`tenants/demo/config.yaml`). That makes the first live run measure the optimized
+pipeline, as intended. The #14 exit check (≥50% at equal quality) then needs the
+matching *before* arm: run the same eval a second time with `cascade_enabled: false`
+and the original Sonnet-first council order (one-line tenant change or a copy of
+the tenant folder), and compare the two runs' `cost_usd` / `llm_calls` columns —
+same fixtures, same session, clean A/B.
 
 Expected shape (per prospect, rough order of magnitude for sanity only):
 Sonnet-dominated strategist+humanizer+critic ≈ tens of thousands of input

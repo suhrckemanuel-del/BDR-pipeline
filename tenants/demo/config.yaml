@@ -56,12 +56,18 @@ crm:
 
 # Multi-agent critique council (quality gate). council_size: 1 restores the
 # original single-rater critic. council_models cycles across scorers.
+# B4 cascade is ON here: ONE scorer runs first and the full council convenes
+# only when the single score is borderline or anything short of a clean
+# approve. council_models[0] is that first rater, so the cheapest tier leads.
+# Prompt caching (B3) needs no config: every Anthropic call is cache-marked
+# in code — the run ledger's cache_hit_rate column shows it working.
 critic:
   council_size: 3
   council_models:
+    - claude-haiku-4-5-20251001     # cascade first rater (cheap tier)
     - claude-sonnet-4-6
     - claude-sonnet-4-6
-    - claude-haiku-4-5-20251001
+  cascade_enabled: true
   best_of_n: 1
 
 # Per-node model routes (B2). Uncomment to override; defaults are

@@ -115,8 +115,8 @@ def test_custom_band_overrides():
 # ---------------------------------------------------------------------------
 
 def test_cascade_disabled_by_default_everywhere():
-    tenant = load_tenant("demo")
-    assert tenant.critic.cascade_enabled is False
+    """Schema default is off; tenants opt in explicitly (the demo tenant now does)."""
+    assert CriticConfig().cascade_enabled is False
 
 
 def test_cascade_enabled_with_council_size_one_never_cascades():
