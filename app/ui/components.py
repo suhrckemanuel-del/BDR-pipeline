@@ -217,6 +217,16 @@ def quality_gate_panel(critic_result: Any) -> None:
     summary = getattr(gate, "summary", "") or ""
     evidence_note = getattr(gate, "evidence_coverage_note", "") or ""
 
+    # Multi-agent critique council badge (council_size defaults to 1 = single rater)
+    council_size = int(getattr(critic_result, "council_size", 1) or 1)
+    agreement = getattr(critic_result, "agreement_level", "single_rater") or "single_rater"
+    council_html = ""
+    if council_size > 1:
+        agreement_label = _readable_label(agreement) if agreement != "single_rater" else "High"
+        council_html = (
+            f'<div><span>Council</span><b>{escape(str(council_size))} raters · {escape(agreement_label)} agreement</b></div>'
+        )
+
     edit_html = ""
     if required_edits:
         edit_html = (
@@ -261,6 +271,7 @@ def quality_gate_panel(critic_result: Any) -> None:
         f'<div><span>Confidence</span><b>{escape(_readable_label(confidence))}</b></div>'
         f'<div><span>Copy quality</span><b>{overall_quality:.1f}/5</b></div>'
         f'<div><span>Risk flags</span><b>{len(risk_flags)}</b></div>'
+        f'{council_html}'
         '</div>'
         '</div>'
         f'{edit_html}'

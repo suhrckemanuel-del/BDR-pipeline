@@ -93,6 +93,50 @@ class ICPConfig(BaseModel):
     )
 
 
+class CriticConfig(BaseModel):
+    """Multi-agent critique council settings for the quality gate."""
+    model_config = ConfigDict(extra="forbid")
+
+    council_size: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description=(
+            "Number of independent critic scorers. 1 = single-rater critic "
+            "(original behavior). 3 = recommended council with median aggregation."
+        ),
+    )
+    council_models: List[str] = Field(
+        default_factory=lambda: [
+            "claude-sonnet-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5-20251001",
+        ],
+        description=(
+            "Model per council scorer (cycled if longer than council_size). "
+            "Mixing models adds rater diversity; temperatures vary per scorer."
+        ),
+    )
+    best_of_n: int = Field(
+        default=1,
+        ge=1,
+        le=3,
+        description=(
+            "Optional candidate generation: when >1 the humanizer produces N "
+            "observation candidates for the recommended angle and the council "
+            "scores each; the best-scoring candidate wins. Selection only — "
+            "generation itself stays deterministic."
+        ),
+    )
+
+    @field_validator("council_models")
+    @classmethod
+    def _check_models(cls, v: List[str]) -> List[str]:
+        if not v:
+            raise ValueError("council_models must not be empty")
+        return v
+
+
 class PersonaConfig(BaseModel):
     """Decision-maker persona that the outreach is targeting."""
     model_config = ConfigDict(extra="forbid")
@@ -254,6 +298,7 @@ class TenantConfig(BaseModel):
     icp: ICPConfig = Field(default_factory=ICPConfig)
     sender: SenderConfig
     crm: CRMConfig = Field(default_factory=CRMConfig)
+    critic: CriticConfig = Field(default_factory=CriticConfig)
     angles: List[OutreachAngle] = Field(min_length=3, max_length=3)
 
     # Loaded from sibling files, not config.yaml itself

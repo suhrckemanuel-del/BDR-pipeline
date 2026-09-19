@@ -53,3 +53,13 @@ sender:
 crm:
   enabled: false
   notion_database_id: null
+
+# Multi-agent critique council (quality gate). council_size: 1 restores the
+# original single-rater critic. council_models cycles across scorers.
+critic:
+  council_size: 3
+  council_models:
+    - claude-sonnet-4-6
+    - claude-sonnet-4-6
+    - claude-haiku-4-5-20251001
+  best_of_n: 1

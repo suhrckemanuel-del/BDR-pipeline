@@ -80,6 +80,10 @@ scripts/
   onboard_tenant.py             # Interactive Claude-assisted tenant wizard
   check_tenant.py               # Pydantic-based tenant validator
   send_via_gmail.py             # Send queued sequences for a tenant
+
+tests/
+  test_critic_aggregation.py    # Critic council aggregation unit tests (pytest)
+  test_council_eval.py          # Council-vs-single-rater eval harness tests (pytest)
 ```
 
 ---
@@ -106,9 +110,11 @@ Input: company name + industry (+ optional trigger_headline) + active TenantConf
     - Applies humanizer_rules.py 29-rule regex filter
   ↓
 [4. Critic]  app/agents/critic.py
-    - Claude scores each touch on 4 dims: pain specificity, proof relevance, CTA clarity, human voice
-    - Rewrites the first paragraph of any email touch with a failing dimension
-    - No retry loop — in-place rewrites, then forward
+    - Critique council: tenant.critic.council_size independent scorers (parallel,
+      model/temperature-diverse) score every touch on 4 dims
+    - Per-dimension MEDIAN aggregation + disagreement flags (scorer span >= 2)
+    - One consolidated rewrite call per failing email touch (all dims in one prompt)
+    - Quality gate runs LAST, judging the final post-rewrite sequence
   ↓
 [5. CRM Sync]  app/services/crm_sync.py (optional)
     - If sync_to_notion AND tenant.crm.enabled → push ProspectCard to Notion
@@ -129,7 +135,7 @@ Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 - `SequenceTouch` — one touch in the 5-touch sequence
 - `OutreachSequence` — full sequence
 - `ProspectCard` — final output card
-- `CriticResult` — per-dim scores + rewrites_applied count
+- `CriticResult` — per-dim scores + rewrites_applied count + council fields (council_size, scorer_overall_scores, disagreements, agreement_level)
 - `CRMSyncResult` — Notion push result
 
 ## Tenant Schema (`app/tenants/schema.py`)
@@ -156,7 +162,9 @@ Output: ProspectCard — 3 angle drafts + 5-touch sequence + critic score
 
 **Streaming UI.** `run_workflow_stream()` yields `(latest_trace_line, full_state)` after each node so the dashboard renders progress live.
 
-**Critic is non-looping.** Rewrites in place and continues. No max-iter retry loop — kept simple to ship.
+**Critic is non-looping.** Rewrites in place and continues. One consolidated rewrite call per touch (all failing dimensions merged into a single prompt); no retry loop.
+
+**Multi-agent critique council (critique only).** The critic fans out `tenant.critic.council_size` independent scorers (default 3: two Sonnet calls at different temperatures + one Haiku for rater diversity), aggregates per-dimension by median, and flags scorer disagreements (span >= 2) into `CriticResult.disagreements`. The quality gate runs last and judges the final post-rewrite sequence, fed panel scores via panel context. Generation stays deterministic — the council never writes copy. `council_size: 1` restores the original single-rater behavior.
 
 ---
 
@@ -184,14 +192,40 @@ Two paths, both documented in `tenants/README.md`:
 
 ---
 
-## No Test Suite
+## Tests
 
-Testing is manual: Streamlit UI tested live, batch scripts run with `--dry-run` first, validators (`check_tenant.py`) run on tenant edits. Smoke tests:
+The critic council aggregation logic has pytest unit tests (pure functions, no API calls):
 
 ```bash
+.venv\Scripts\python.exe -m pytest tests -q
+```
+
+Everything else is tested manually: Streamlit UI tested live, batch scripts run with `--dry-run` first, validators (`check_tenant.py`) run on tenant edits. Smoke tests:
+
+```bash
+python -m compileall app scripts
 python scripts/check_tenant.py
+python scripts/run_demo_eval.py
 python -c "from app.agents.workflow_engine import build_workflow; build_workflow(use_checkpointer=False)"
 ```
+
+## Council Comparison Eval
+
+Live harness that runs one full pipeline run per prospect, then scores the SAME
+completed state with two critic arms: `council_size: 1` (single rater) vs
+`council_size: 3` (council). Arm rewrites are discarded, so both arms judge
+identical copy — differences reflect rater behavior only. Requires
+ANTHROPIC_API_KEY.
+
+```bash
+python scripts/run_council_eval.py                  # 2 accounts, council of 3
+python scripts/run_council_eval.py --max-accounts 3 --council-size 5
+```
+
+Outputs `docs/council-evals.md`, `docs/council-eval-results.csv`, and
+`docs/council-eval-results.json`: gate-verdict shifts (stricter / looser / same),
+average quality deltas, and per-account disagreement rates (council arm only).
+Internal workflow metrics only — no campaign-performance claims.
 
 ---
 

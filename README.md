@@ -203,6 +203,16 @@ Outputs:
 
 These are internal workflow metrics: completion, runtime, evidence count, high-confidence evidence, contact count, score, gate verdict, risk flags, unsupported claim count, and report generation status. They do not measure replies, meetings, revenue, or campaign lift.
 
+## Council Comparison Eval (live)
+
+Compares the single-rater critic against the multi-agent critique council on identical runs: one full pipeline run per prospect, then the same completed state is scored by `council_size: 1` and `council_size: 3` critic arms (arm rewrites discarded). Requires `ANTHROPIC_API_KEY`.
+
+```bash
+python scripts/run_council_eval.py
+```
+
+Outputs [docs/council-evals.md](docs/council-evals.md), `docs/council-eval-results.csv`, and `docs/council-eval-results.json`: gate-verdict shifts (stricter/looser/same), average quality deltas, and per-account disagreement rates. Internal workflow metrics only — no campaign-performance claims.
+
 ## Example Output
 
 The Report tab generates a Markdown account report named like:

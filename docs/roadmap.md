@@ -26,6 +26,8 @@ This roadmap keeps the project honest: the current artifact is a founder-safe AI
 
 - Expand [docs/evals.md](evals.md) with periodic sample and live eval snapshots.
 - Add regression fixtures for report generation and risk-gate extraction.
+- Add unit tests for council disagreement handling under scorer partial failure.
+- Shipped: `scripts/run_council_eval.py` — live council-vs-single-rater comparison (verdict shifts, quality deltas, disagreement rates) on shared pipeline runs; outputs `docs/council-evals.md`.
 - Track evidence quality over time: observed vs. derived vs. inferred.
 - Track quality-gate verdict distribution across demo accounts.
 - Add eval checks for unsupported claims and overclaim language in generated reports.
@@ -47,7 +49,7 @@ This roadmap keeps the project honest: the current artifact is a founder-safe AI
 - Evidence-first account research with a clear line between sourced facts and inference.
 - Human-approved outreach packages instead of automated spam.
 - A lightweight operating system for account selection, messaging, critique, and review.
-- Optional LLM council for critique only, not for unchecked generation or auto-send decisions.
+- ~~Optional LLM council for critique only~~ Shipped: multi-agent critique council (median aggregation, disagreement flags, `tenant.critic.council_size`) judges copy only; generation stays deterministic.
 - Production-grade tenant management, audit logs, permissions, and durable storage if the project moves beyond portfolio proof.
 
 ## Non-Goals For Now

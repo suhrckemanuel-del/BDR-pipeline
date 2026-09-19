@@ -1,7 +1,7 @@
 {
   "mode": "sample",
   "tenant_id": "demo",
-  "evaluated_on": "2026-06-11",
+  "evaluated_on": "2026-09-19",
   "disclaimer": "Internal demo workflow metrics only. No reply rates, meeting rates, revenue, or campaign lift are claimed.",
   "rows": [
     {

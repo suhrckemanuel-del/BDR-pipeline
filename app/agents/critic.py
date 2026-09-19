@@ -1,20 +1,33 @@
 """
 critic.py — Quality-gate node for the BDR pipeline.
 
-Scores every touch in the outreach sequence on four dimensions, then rewrites
-the first paragraph of any email touch where one or more dimensions fall below
-the quality threshold (each dim < 3 on a 1-5 scale).
+Multi-agent critique council: `tenant.critic.council_size` independent scorer
+calls (parallel, model/temperature-diverse) each score every touch on four
+dimensions. Scores are aggregated per-dimension by MEDIAN (robust against a
+single biased rater), overall quality by mean, and any dimension where scorers
+differ by >=2 is surfaced as a disagreement for the gate and the UI.
+
+Flow inside this node:
+
+    1. Council scoring  -> aggregated SequenceCritique
+    2. Rewrites         -> failing first paragraphs rewritten (one call per touch,
+                           all failing dimensions merged into a single prompt)
+    3. Quality gate     -> judges the FINAL post-rewrite sequence (so the verdict
+                           always describes the copy the founder actually sees)
 
 Fixed-bank content (proof points, CTAs, subjects) is never touched — only the
 LLM-generated first paragraph (the observation paragraph) may be rewritten.
 
 Tenant-aware: brand name, persona, and product context come from
-`state["tenant"]`. Critic prompts are built per-tenant.
+`state["tenant"]`. Critic prompts are built per-tenant. `council_size: 1`
+reproduces the original single-rater behavior exactly.
 """
 from __future__ import annotations
 
 import logging
 import os
+import statistics
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from typing import Literal
 
@@ -23,13 +36,14 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, model_validator
 
 from app.services.humanizer_rules import humanize
-from app.tenants.schema import TenantConfig
+from app.tenants.schema import CriticConfig, TenantConfig
 
 from .state import BDRState, ProspectCard, SequenceTouch
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "claude-sonnet-4-6"
+FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +127,211 @@ class CriticResult(BaseModel):
     rewrites_applied: int = 0
     critique_summary: str = ""
     quality_gate: QualityGate | None = None
+    # Council extensions (additive; defaults keep old serialized results valid)
+    council_size: int = 1
+    scorer_overall_scores: list[float] = Field(default_factory=list)
+    disagreements: list[str] = Field(default_factory=list)
+    agreement_level: Literal["high", "medium", "low", "single_rater"] = "single_rater"
+
+
+# ---------------------------------------------------------------------------
+# Council helpers
+# ---------------------------------------------------------------------------
+
+DIMENSION_FIELDS = {
+    "pain_specificity": ("pain_specificity", "pain_critique"),
+    "proof_relevance": ("proof_relevance", "proof_critique"),
+    "cta_clarity": ("cta_clarity", "cta_critique"),
+    "human_voice": ("human_voice", "voice_critique"),
+}
+
+
+def judge_disagreement_level(disagreements: list[str]) -> Literal["high", "medium", "low", "single_rater"]:
+    """Map a disagreement list to a coarse UI label. Pure function."""
+    if not disagreements:
+        return "high"
+    if len(disagreements) == 1:
+        return "medium"
+    return "low"
+
+
+def _aggregate(
+    critiques: list[SequenceCritique],
+) -> tuple[SequenceCritique, list[float], list[str]]:
+    """
+    Merge independent scorer critiques into one. Pure function.
+
+    Per-touch, per-dimension: MEDIAN score (robust against one biased rater).
+    Critique strings: first non-empty critique among scorers (they describe the
+    same weakness; medians fix the numbers, prose needs no averaging).
+    A dimension whose scorer scores span >= 2 points is flagged as a
+    disagreement ("T{n}.{dim}: {scores}").
+
+    Returns (aggregated critique, scorer overall scores, disagreement strings).
+    """
+    if not critiques:
+        raise ValueError("aggregate requires at least one critique")
+    if len(critiques) == 1:
+        sole = critiques[0]
+        return sole, [sole.overall_quality], []
+
+    by_touch: dict[int, list[TouchScore]] = {}
+    for c in critiques:
+        for ts in c.touch_scores:
+            by_touch.setdefault(ts.touch_number, []).append(ts)
+
+    aggregated_touches: list[TouchScore] = []
+    disagreements: list[str] = []
+    for touch_number in sorted(by_touch):
+        scores = by_touch[touch_number]
+
+        # Compute all four medians first, then build the final TouchScore once.
+        medians: dict[str, int] = {}
+        for field_name, _ in DIMENSION_FIELDS.values():
+            values = [int(getattr(ts, field_name)) for ts in scores]
+            medians[field_name] = int(statistics.median(values))
+            if max(values) - min(values) >= 2:
+                disagreements.append(
+                    f"T{touch_number}.{field_name}: scorers {values}"
+                )
+
+        critiques_for_dim: dict[str, str] = {}
+        for field_name, critique_field in DIMENSION_FIELDS.values():
+            best = ""
+            for ts in scores:
+                candidate = (getattr(ts, critique_field) or "").strip()
+                if candidate:
+                    best = candidate
+                    break
+            critiques_for_dim[field_name] = best
+
+        feedback = ""
+        for ts in scores:
+            if (ts.feedback or "").strip():
+                feedback = ts.feedback.strip()
+                break
+
+        aggregated_touches.append(
+            TouchScore(
+                touch_number=touch_number,
+                pain_specificity=medians["pain_specificity"],
+                proof_relevance=medians["proof_relevance"],
+                cta_clarity=medians["cta_clarity"],
+                human_voice=medians["human_voice"],
+                feedback=feedback,
+                pain_critique=critiques_for_dim["pain_specificity"],
+                proof_critique=critiques_for_dim["proof_relevance"],
+                cta_critique=critiques_for_dim["cta_clarity"],
+                voice_critique=critiques_for_dim["human_voice"],
+            )
+        )
+
+    overall = round(sum(c.overall_quality for c in critiques) / len(critiques), 2)
+    summary = ""
+    for c in critiques:
+        if (c.critique_summary or "").strip():
+            summary = c.critique_summary.strip()
+            break
+    if disagreements:
+        summary = (summary + " ").strip() + (
+            f"Scorer disagreement on {len(disagreements)} dimension(s); medians used."
+        )
+
+    aggregated = SequenceCritique(
+        touch_scores=aggregated_touches,
+        overall_quality=overall,
+        critique_summary=summary,
+    )
+    scorer_overalls = [round(c.overall_quality, 2) for c in critiques]
+    return aggregated, scorer_overalls, disagreements
+
+
+def _model_for_scorer(critic_cfg: CriticConfig, idx: int) -> str:
+    models = critic_cfg.council_models or [DEFAULT_MODEL]
+    if not models:
+        models = [DEFAULT_MODEL]
+    return models[idx % len(models)]
+
+
+def _temperature_for_scorer(idx: int) -> float:
+    # Slight per-scorer variation adds rater diversity on identical models.
+    return round(0.2 + 0.1 * (idx % 3), 2)
+
+
+def _score_with_council(
+    touches: list[SequenceTouch],
+    company: str,
+    evidence_context: str,
+    tenant: TenantConfig,
+    critic_cfg: CriticConfig,
+    api_key: str,
+) -> tuple[SequenceCritique | None, list[float], list[str], list[str]]:
+    """
+    Run independent council scorers in parallel, then aggregate.
+
+    Scorers that fail are skipped; if none succeed, returns (None, [], [], []).
+    Also returns per-scorer notes about failures for the trace.
+    """
+    size = max(1, critic_cfg.council_size)
+
+    def score_one(idx: int) -> SequenceCritique:
+        llm = ChatAnthropic(
+            model=_model_for_scorer(critic_cfg, idx),
+            api_key=api_key,
+            max_tokens=4000,
+            temperature=_temperature_for_scorer(idx),
+        )
+        critic_llm = llm.with_structured_output(SequenceCritique)
+        return critic_llm.invoke(
+            [
+                SystemMessage(content=_build_critic_system(tenant)),
+                HumanMessage(content=_build_critic_human_message(touches, company, evidence_context)),
+            ]
+        )
+
+    critiques: list[SequenceCritique] = []
+    scorer_notes: list[str] = []
+    with ThreadPoolExecutor(max_workers=min(size, 4)) as pool:
+        futures = {pool.submit(score_one, i): i for i in range(size)}
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                critiques.append(future.result())
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Critic: scorer %d/%d failed: %s", idx + 1, size, exc)
+                scorer_notes.append(f"scorer {idx + 1}/{size} failed ({type(exc).__name__})")
+
+    if not critiques:
+        return None, [], [], scorer_notes
+
+    critiques.sort(key=lambda c: c.overall_quality)  # deterministic order
+    aggregated, scorer_overalls, disagreements = _aggregate(critiques)
+    return aggregated, scorer_overalls, disagreements, scorer_notes
+
+
+def _build_panel_context(
+    scorer_overall_scores: list[float],
+    disagreements: list[str],
+) -> str:
+    """Render council panel context for the quality-gate prompt."""
+    if not scorer_overall_scores:
+        return ""
+    if len(scorer_overall_scores) == 1:
+        return f"Review panel: single scorer (overall {scorer_overall_scores[0]:.1f}/5)."
+    spread = max(scorer_overall_scores) - min(scorer_overall_scores)
+    lines = [
+        "Review panel:",
+        f"- {len(scorer_overall_scores)} independent scorers, overall quality: "
+        + ", ".join(f"{s:.1f}" for s in scorer_overall_scores)
+        + f" (spread {spread:.1f}).",
+    ]
+    if disagreements:
+        lines.append(
+            "- Scorers disagreed (medians used): " + "; ".join(disagreements[:6])
+        )
+    else:
+        lines.append("- Scorers agreed on every dimension.")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +344,8 @@ def _build_critic_system(tenant: TenantConfig) -> str:
         f"for {tenant.brand.name}.\n\n"
         f"Product context: {tenant.business.description.strip()}\n"
         f"Target persona: {tenant.persona.title}\n\n"
+        "You are one of several independent scorers on a review panel; score "
+        "strictly on the merits of the copy in front of you.\n\n"
         "You score each touch on FOUR dimensions (1–5 scale each):\n\n"
         "PAIN_SPECIFICITY\n"
         "  5 = references a concrete, falsifiable pain unique to THIS company\n"
@@ -177,6 +398,7 @@ def _build_quality_gate_system(tenant: TenantConfig) -> str:
         "  - If evidence is thin, use needs_more_research or needs_edit.\n"
         "  - If account_score.priority_label is do_not_send_yet, the verdict should normally be do_not_send_yet.\n"
         "  - If account_score.priority_label is needs_more_research, do not return approved unless risks are clearly low.\n"
+        "  - The sequence you review is the FINAL rewritten version. Judge it as-is.\n"
         "  - Do not claim the gate guarantees deliverability, reply quality, or safety for auto-send.\n"
         "  - Human review is still required before sending.\n\n"
         "Return a QualityGate. Keep the summary and fixes concise, specific, and founder-friendly."
@@ -188,15 +410,15 @@ def _build_rewriter_system(tenant: TenantConfig) -> str:
         f"You are a B2B cold-email rewriter for {tenant.brand.name}.\n\n"
         "You receive:\n"
         "  - The original outreach email body\n"
-        "  - The single failing dimension and its critique\n"
-        "  - Instructions to rewrite ONLY the part of the email that addresses that dimension\n\n"
-        "Your job: produce a replacement first paragraph (1–2 sentences) targeted at "
-        "the failing dimension. Keep the rest of the email's structure and meaning "
-        "intact — only fix what the critique says is broken.\n\n"
+        "  - One or more failing dimensions, each with its critique and rewrite instruction\n"
+        "  - The allowed evidence context\n\n"
+        "Your job: produce a replacement first paragraph (1–2 sentences) that fixes "
+        "ALL failing dimensions together. Keep the rest of the email's structure and "
+        "meaning intact — only fix what the critiques say is broken.\n\n"
         "Rules:\n"
         "  - Match the approximate word count of the original first paragraph.\n"
         "  - Start with the company name or a specific observation about that company.\n"
-        '    NEVER start with "I" or "We".\n'
+        "    NEVER start with \"I\" or \"We\".\n"
         "  - No buzzwords. Forbidden: leverage, transformative, seamlessly,\n"
         "    revolutionize, streamline, empower, ecosystem, unlock, cutting-edge,\n"
         "    holistic, innovative, synergy, paradigm, robust, scalable, world-class,\n"
@@ -351,12 +573,17 @@ def _build_quality_gate_human_message(
     enrichment: object | None,
     critique: SequenceCritique,
     evidence_context: str,
+    panel_context: str = "",
 ) -> str:
-    return "\n".join(
+    parts = [
+        f"Company: {company}",
+        _format_account_score_context(enrichment),
+        _format_contact_context(enrichment),
+    ]
+    if panel_context:
+        parts.append(panel_context)
+    parts.extend(
         [
-            f"Company: {company}",
-            _format_account_score_context(enrichment),
-            _format_contact_context(enrichment),
             evidence_context,
             _format_touch_score_context(critique.touch_scores),
             f"Overall copy quality: {critique.overall_quality:.1f}/5",
@@ -368,6 +595,7 @@ def _build_quality_gate_human_message(
             "Return a QualityGate verdict for human review. Do not approve unsupported claims.",
         ]
     )
+    return "\n".join(parts)
 
 
 def _fallback_quality_gate(
@@ -464,11 +692,123 @@ def _build_rewriter_human_message(
     )
 
 
+def _build_consolidated_rewriter_human_message(
+    first_para: str,
+    score: TouchScore,
+    company: str,
+    touch_number: int,
+    evidence_context: str = "",
+) -> str:
+    """
+    One prompt covering ALL failing dimensions of a touch at once, so a single
+    rewrite call fixes the whole paragraph instead of one dimension per call.
+    """
+    dim_blocks: list[str] = []
+    for dim in score.failing_dims or []:
+        critique_field = DIMENSION_FIELDS[dim][1]
+        critique = (getattr(score, critique_field) or score.feedback or "").strip()
+        instruction = DIMENSION_INSTRUCTIONS.get(dim, "")
+        dim_blocks.append(
+            f"- {dim}\n  Critique: {critique}\n  Rewrite instruction: {instruction}"
+        )
+    dims_block = "\n".join(dim_blocks) or f"- {score.feedback or 'overall quality below threshold'}"
+
+    return (
+        f"Company: {company}\n"
+        f"Touch number: {touch_number}\n"
+        f"Quality score: {score.average:.1f}/5\n\n"
+        f"Failing dimensions ({len(dim_blocks)}):\n{dims_block}\n\n"
+        f"Allowed evidence context:\n{evidence_context or '(no evidence cards available)'}\n\n"
+        f"Original first paragraph:\n{first_para}\n\n"
+        "Write a replacement first paragraph only, fixing ALL failing dimensions together."
+    )
+
+
 def _replace_first_paragraph(body: str, new_para: str) -> str:
     parts = body.split("\n\n")
     if len(parts) <= 1:
         return new_para
     return new_para + "\n\n" + "\n\n".join(parts[1:])
+
+
+def _rewrite_failing_touches(
+    touches_needing_rewrite: list[TouchScore],
+    card: ProspectCard,
+    company: str,
+    evidence_context: str,
+    tenant: TenantConfig,
+    api_key: str,
+) -> tuple[ProspectCard, int, list[str]]:
+    """
+    Rewrite the first paragraph of each failing email touch.
+
+    One rewrite call per touch (all failing dimensions merged into a single
+    prompt), with one in-place retry if the model returns something unusable.
+    Returns (updated card, rewrites applied, trace lines).
+    """
+    updated_card = deepcopy(card)
+    if updated_card.sequence is None:
+        return updated_card, 0, []
+    touch_map: dict[int, SequenceTouch] = {
+        t.touch_number: t for t in updated_card.sequence.touches
+    }
+
+    rewriter_llm = ChatAnthropic(
+        model=DEFAULT_MODEL,
+        api_key=api_key,
+        max_tokens=300,
+        temperature=0.4,
+    )
+    rewriter_system = _build_rewriter_system(tenant)
+
+    rewrites_applied = 0
+    trace: list[str] = []
+
+    for ts in touches_needing_rewrite:
+        touch = touch_map.get(ts.touch_number)
+        if touch is None or touch.channel != "email" or not touch.body:
+            continue
+
+        first_para = touch.body.split("\n\n")[0]
+        rewriter_human = _build_consolidated_rewriter_human_message(
+            first_para=first_para,
+            score=ts,
+            company=company,
+            touch_number=touch.touch_number,
+            evidence_context=evidence_context,
+        )
+
+        for attempt in (1, 2):
+            try:
+                response = rewriter_llm.invoke(
+                    [
+                        SystemMessage(content=rewriter_system),
+                        HumanMessage(content=rewriter_human),
+                    ]
+                )
+                new_para = (response.content or "").strip()
+                if new_para and new_para != first_para:
+                    new_body = _replace_first_paragraph(touch.body, new_para)
+                    new_body = humanize(new_body)
+                    touch.body = new_body
+                    touch.word_count = len(new_body.replace("\n", " ").split())
+                    ts.rewrite_attempts = attempt
+                    rewrites_applied += 1
+                    dims = ",".join(ts.failing_dims) or "quality"
+                    trace.append(
+                        f"Critic: rewrote T{touch.touch_number} ({dims}) — single consolidated call"
+                    )
+                    break
+            except Exception as rewrite_exc:  # noqa: BLE001
+                logger.warning(
+                    "Critic: rewrite failed for T%d: %s", ts.touch_number, rewrite_exc
+                )
+                trace.append(
+                    f"Critic: rewrite failed T{ts.touch_number} — {rewrite_exc}"
+                )
+                break
+
+    return updated_card, rewrites_applied, trace
 
 
 # ---------------------------------------------------------------------------
@@ -479,10 +819,14 @@ def run_critic(state: BDRState) -> dict:
     """
     Quality-gate node.
 
-    1. Extract sequence from state["card"].sequence.
-    2. Score all touches with one structured Claude call.
-    3. Rewrite first paragraph of email touches with any failing dimension.
-    4. Return updated card, CriticResult, agent_trace.
+    1. Council scoring: `tenant.critic.council_size` independent scorers run in
+       parallel; scores are aggregated by per-dimension median.
+    2. Rewrite: failing email touches get ONE consolidated rewrite call each.
+    3. Gate: the quality gate runs LAST, on the final post-rewrite sequence,
+       fed the panel's aggregated scores and disagreement notes.
+
+    On scorer failure: remaining scorers still count; if ALL scorers fail, a
+    neutral CriticResult with a fallback gate is returned (pipeline continues).
     On any exception: log to trace and return {} (pipeline continues).
     """
     trace: list[str] = list(state.get("agent_trace", []))
@@ -516,46 +860,87 @@ def run_critic(state: BDRState) -> dict:
             trace.append("Critic: ANTHROPIC_API_KEY missing — skipping quality gate")
             return {"agent_trace": trace}
 
-        llm = ChatAnthropic(
-            model=MODEL,
-            api_key=api_key,
-            max_tokens=4000,
-            temperature=0.2,
-        )
-        critic_llm = llm.with_structured_output(SequenceCritique)
+        critic_cfg = tenant.critic or CriticConfig()
+        council_size = max(1, critic_cfg.council_size)
 
-        human_msg = _build_critic_human_message(touches, company, evidence_context=evidence_context)
-        try:
-            critique: SequenceCritique = critic_llm.invoke(
-                [SystemMessage(content=_build_critic_system(tenant)), HumanMessage(content=human_msg)]
+        # --- 1. Council scoring -------------------------------------------
+        critique, scorer_overalls, disagreements, scorer_notes = _score_with_council(
+            touches=touches,
+            company=company,
+            evidence_context=evidence_context,
+            tenant=tenant,
+            critic_cfg=critic_cfg,
+            api_key=api_key,
+        )
+
+        if critique is None:
+            logger.warning("Critic: all %d scorer call(s) failed — returning neutral result", council_size)
+            trace.append(
+                f"Critic: council scoring failed ({' · '.join(scorer_notes) or 'no scorers succeeded'})"
+                " — neutral result"
             )
-        except Exception as score_exc:  # noqa: BLE001
-            # Structured output sometimes returns {} on long inputs; surface a neutral
-            # CriticResult instead of crashing the pipeline.
-            logger.warning("Critic: scoring call failed (%s) — returning neutral result", score_exc)
-            trace.append(f"Critic: scoring failed ({type(score_exc).__name__}) — neutral result")
             return {
                 "card": card,
                 "critic_result": CriticResult(
                     overall_quality=0.0,
                     rewrites_applied=0,
-                    quality_gate=_fallback_quality_gate(enrichment, None, reason=type(score_exc).__name__),
-                    critique_summary="Critic skipped — scoring call failed.",
+                    quality_gate=_fallback_quality_gate(enrichment, None, reason="all scorers failed"),
+                    critique_summary="Critic skipped — scoring calls failed.",
+                    council_size=council_size,
+                    scorer_overall_scores=[],
+                    disagreements=[],
+                    agreement_level="low",
                 ),
                 "agent_trace": trace,
             }
 
+        for note in scorer_notes:
+            trace.append(f"Critic: {note}")
+
         n_touches = len(critique.touch_scores)
         avg = critique.overall_quality
-        trace.append(f"Critic: scored {n_touches} touches (avg: {avg:.1f})")
+        if council_size > 1:
+            trace.append(
+                f"Critic: council of {council_size} scored {n_touches} touches "
+                f"(aggregated avg: {avg:.1f}, scorer spread: "
+                f"{(max(scorer_overalls) - min(scorer_overalls)) if scorer_overalls else 0:.1f})"
+            )
+        else:
+            trace.append(f"Critic: scored {n_touches} touches (avg: {avg:.1f})")
 
-        gate_llm = llm.with_structured_output(QualityGate)
+        # --- 2. Rewrites (BEFORE the gate, so the gate sees final copy) ----
+        rewrites_applied = 0
+        touches_needing_rewrite = [ts for ts in critique.touch_scores if ts.needs_rewrite]
+
+        if touches_needing_rewrite:
+            card, rewrites_applied, rewrite_trace = _rewrite_failing_touches(
+                touches_needing_rewrite=touches_needing_rewrite,
+                card=card,
+                company=company,
+                evidence_context=evidence_context,
+                tenant=tenant,
+                api_key=api_key,
+            )
+            trace.extend(rewrite_trace)
+            touches = card.sequence.touches if card.sequence else touches
+
+        trace.append(f"Critic: {rewrites_applied} rewrite(s) applied")
+
+        # --- 3. Quality gate on the FINAL (post-rewrite) sequence ----------
+        panel_context = _build_panel_context(scorer_overalls, disagreements)
+        gate_llm = ChatAnthropic(
+            model=DEFAULT_MODEL,
+            api_key=api_key,
+            max_tokens=4000,
+            temperature=0.2,
+        ).with_structured_output(QualityGate)
         gate_human_msg = _build_quality_gate_human_message(
             touches=touches,
             company=company,
             enrichment=enrichment,
             critique=critique,
             evidence_context=evidence_context,
+            panel_context=panel_context,
         )
         try:
             quality_gate: QualityGate = gate_llm.invoke(
@@ -565,7 +950,7 @@ def run_critic(state: BDRState) -> dict:
                 ]
             )
         except Exception as gate_exc:  # noqa: BLE001
-            logger.warning("Critic: quality gate call failed (%s) â€” using fallback", gate_exc)
+            logger.warning("Critic: quality gate call failed (%s) — using fallback", gate_exc)
             quality_gate = _fallback_quality_gate(enrichment, critique, reason=type(gate_exc).__name__)
 
         trace.append(
@@ -574,106 +959,21 @@ def run_critic(state: BDRState) -> dict:
         )
         trace.append(f"Critic: unsupported claims flagged: {quality_gate.unsupported_claim_count}")
 
-        rewrites_applied = 0
-        touches_needing_rewrite = [ts for ts in critique.touch_scores if ts.needs_rewrite]
-
-        if quality_gate.verdict == "do_not_send_yet":
-            updated_card = card
-            trace.append("Critic: do_not_send_yet verdict â€” skipping rewrite-to-approve behavior")
-        elif touches_needing_rewrite:
-            updated_card = deepcopy(card)
-            touch_map: dict[int, SequenceTouch] = {
-                t.touch_number: t for t in updated_card.sequence.touches
-            }
-
-            rewriter_llm = ChatAnthropic(
-                model=MODEL,
-                api_key=api_key,
-                max_tokens=300,
-                temperature=0.4,
-            )
-
-            MAX_ATTEMPTS_PER_DIM = 2
-            rewriter_system = _build_rewriter_system(tenant)
-
-            for ts in touches_needing_rewrite:
-                touch = touch_map.get(ts.touch_number)
-                if touch is None or touch.channel != "email" or not touch.body:
-                    continue
-
-                for dim in ts.failing_dims:
-                    if dim == "cta_clarity":
-                        dim_critique = ts.cta_critique or ts.feedback
-                    elif dim == "human_voice":
-                        dim_critique = ts.voice_critique or ts.feedback
-                    elif dim == "pain_specificity":
-                        dim_critique = ts.pain_critique or ts.feedback
-                    elif dim == "proof_relevance":
-                        dim_critique = ts.proof_critique or ts.feedback
-                    else:
-                        dim_critique = ts.feedback
-
-                    attempt = 0
-                    while attempt < MAX_ATTEMPTS_PER_DIM:
-                        attempt += 1
-                        first_para = touch.body.split("\n\n")[0]
-                        rewriter_human = _build_rewriter_human_message(
-                            first_para=first_para,
-                            score=ts,
-                            company=company,
-                            touch_number=touch.touch_number,
-                            dimension=dim,
-                            critique=dim_critique,
-                            evidence_context=evidence_context,
-                        )
-                        try:
-                            response = rewriter_llm.invoke(
-                                [
-                                    SystemMessage(content=rewriter_system),
-                                    HumanMessage(content=rewriter_human),
-                                ]
-                            )
-                            new_para: str = (response.content or "").strip()
-                            if new_para and new_para != first_para:
-                                new_body = _replace_first_paragraph(touch.body, new_para)
-                                new_body = humanize(new_body)
-                                touch.body = new_body
-                                touch.word_count = len(new_body.replace("\n", " ").split())
-                                rewrites_applied += 1
-                                ts.rewrite_attempts = attempt
-                                trace.append(
-                                    f"Critic: rewrote T{touch.touch_number}.{dim} "
-                                    f"(attempt {attempt})"
-                                )
-                                break
-                        except Exception as rewrite_exc:  # noqa: BLE001
-                            logger.warning(
-                                "Critic: rewrite failed for T%d.%s: %s",
-                                ts.touch_number, dim, rewrite_exc,
-                            )
-                            trace.append(
-                                f"Critic: rewrite failed T{ts.touch_number}.{dim} — {rewrite_exc}"
-                            )
-                            break
-                    else:
-                        trace.append(
-                            f"Critic: T{ts.touch_number}.{dim} hit {MAX_ATTEMPTS_PER_DIM}-attempt cap"
-                        )
-        else:
-            updated_card = card
-
-        trace.append(f"Critic: {rewrites_applied} rewrites applied")
-
+        agreement = "single_rater" if council_size == 1 else judge_disagreement_level(disagreements)
         critic_result = CriticResult(
             touch_scores=critique.touch_scores,
             overall_quality=critique.overall_quality,
             rewrites_applied=rewrites_applied,
             critique_summary=critique.critique_summary,
             quality_gate=quality_gate,
+            council_size=council_size,
+            scorer_overall_scores=scorer_overalls,
+            disagreements=disagreements,
+            agreement_level=agreement,  # type: ignore[arg-type]
         )
 
         return {
-            "card": updated_card,
+            "card": card,
             "critic_result": critic_result,
             "agent_trace": trace,
         }

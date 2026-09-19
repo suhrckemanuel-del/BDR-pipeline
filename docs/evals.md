@@ -5,7 +5,7 @@ They do not claim reply rates, meeting rates, revenue, deliverability, or campai
 
 ## What Was Evaluated
 
-- Date: 2026-06-11
+- Date: 2026-09-19
 - Tenant: `demo`
 - Mode: `sample`
 - Demo accounts used: Globex Industries, Initech, Hooli
