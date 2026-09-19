@@ -146,6 +146,34 @@ structured-output contract — no provider-specific text parsing exists.
 > per-tenant legal/compliance decision — verify the endpoint's data-handling
 > terms (and GDPR transfer posture for EU contacts) before enabling it.
 
+### Cascade council (`critic.cascade_*`)
+
+By default every prospect is scored by the full council
+(`critic.council_size` raters). The **cascade** option runs ONE scorer first
+and convenes the full panel only when scrutiny actually changes outcomes:
+
+```yaml
+critic:
+  cascade_enabled: true       # default false = full council every run
+  cascade_borderline_low: 3   # escalate when the single-rater mean is in
+  cascade_borderline_high: 4  # [low, high] inclusive; 5.0 never escalates
+```
+
+Escalation triggers (any one suffices):
+
+- the single rater's mean quality falls in `[cascade_borderline_low,`
+  `cascade_borderline_high]`
+- any touch needs a rewrite (failing dimensions)
+
+A clean, confident result (mean 5.0 or below the band with no failing dims)
+skips the panel. When the panel does convene, the single-rater call is reused
+as a panel vote — escalation adds exactly `council_size - 1` calls, and median
+aggregation/disagreement logic is unchanged. Escalations are logged in the
+agent trace (`Critic: cascade escalated — ...`), never silent.
+
+Typical effect: most prospects cost one scorer call instead of three.
+Parity with full-council verdicts is checked by #14's exit validation.
+
 ### `icp.txt`
 
 Plain text. Anything goes. This loads into the UI's ICP editor and into the

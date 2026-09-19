@@ -157,6 +157,33 @@ def judge_disagreement_level(disagreements: list[str]) -> Literal["high", "mediu
     return "low"
 
 
+def needs_council_escalation(
+    critique: "SequenceCritique",
+    critic_cfg: "CriticConfig",
+) -> tuple[bool, list[str]]:
+    """Cascade decision (B4): does this single-rater result need the panel?
+
+    Pure function over the single rater's critique. Escalation triggers
+    (any one suffices):
+      - the rater's mean overall quality falls in the configured borderline
+        band [cascade_borderline_low, cascade_borderline_high] — a perfect
+        5.0 never escalates on its own
+      - any touch needs a rewrite (failing dimensions present)
+
+    Returns (escalate, reasons). reasons are human-readable trace lines.
+    """
+    reasons: list[str] = []
+    mean = float(critique.overall_quality)
+    low = critic_cfg.cascade_borderline_low
+    high = critic_cfg.cascade_borderline_high
+    if low <= mean <= high and mean < 5.0:
+        reasons.append(f"borderline score {mean:.1f} in [{low}, {high}]")
+    failing = [ts.touch_number for ts in critique.touch_scores if ts.needs_rewrite]
+    if failing:
+        reasons.append(f"touches need rewrite: {failing}")
+    return (bool(reasons), reasons)
+
+
 def _aggregate(
     critiques: list[SequenceCritique],
 ) -> tuple[SequenceCritique, list[float], list[str]]:
@@ -268,14 +295,22 @@ def _score_with_council(
     critic_cfg: CriticConfig,
     api_key: str,
     tracker: "UsageTracker | None" = None,
+    seed_critique: "SequenceCritique | None" = None,
 ) -> tuple[SequenceCritique | None, list[float], list[str], list[str]]:
     """
     Run independent council scorers in parallel, then aggregate.
 
     Scorers that fail are skipped; if none succeed, returns (None, [], [], []).
     Also returns per-scorer notes about failures for the trace.
+
+    B4 cascade: when ``seed_critique`` is provided (the cascade's single-rater
+    result), it joins the panel as scorer 0 and live scorers run for indexes
+    1..size-1 — the already-spent single-rater call is never repeated.
     """
     size = max(1, critic_cfg.council_size)
+    start_idx = 0
+    if seed_critique is not None:
+        start_idx = 1  # index 0's call already happened in the cascade probe
 
     scorer_route = tenant.models.route_for("gate")
     scorer_route = scorer_route.model_copy(update={"node": "gate"})
@@ -308,8 +343,10 @@ def _score_with_council(
 
     critiques: list[SequenceCritique] = []
     scorer_notes: list[str] = []
-    with ThreadPoolExecutor(max_workers=min(size, 4)) as pool:
-        futures = {pool.submit(score_one, i): i for i in range(size)}
+    if seed_critique is not None:
+        critiques.append(seed_critique)
+    with ThreadPoolExecutor(max_workers=min(max(size - start_idx, 1), 4)) as pool:
+        futures = {pool.submit(score_one, i): i for i in range(start_idx, size)}
         for future in as_completed(futures):
             idx = futures[future]
             try:
@@ -884,17 +921,57 @@ def run_critic(state: BDRState) -> dict:
         critic_cfg = tenant.critic or CriticConfig()
         council_size = max(1, critic_cfg.council_size)
 
-        # --- 1. Council scoring -------------------------------------------
+        # --- 1. Council scoring (cascade-aware, B4) -----------------------
         tracker = UsageTracker(node="critic", default_model=DEFAULT_MODEL)
-        critique, scorer_overalls, disagreements, scorer_notes = _score_with_council(
-            touches=touches,
-            company=company,
-            evidence_context=evidence_context,
-            tenant=tenant,
-            critic_cfg=critic_cfg,
-            api_key=api_key,
-            tracker=tracker,
-        )
+        escalated = False
+        if critic_cfg.cascade_enabled and council_size > 1:
+            # Single rater first (scorer 0). If it lands clean, we are done —
+            # council_size stays 1 for this run. Otherwise the SAME scorer's
+            # critique seeds the full panel (no call is wasted on escalation).
+            single_critique, _, _, single_notes = _score_with_council(
+                touches=touches,
+                company=company,
+                evidence_context=evidence_context,
+                tenant=tenant,
+                critic_cfg=CriticConfig(council_size=1, council_models=[critic_cfg.council_models[0]]),
+                api_key=api_key,
+                tracker=tracker,
+            )
+            if single_critique is None:
+                critique, scorer_overalls, disagreements, scorer_notes = None, [], [], single_notes
+            else:
+                escalate, reasons = needs_council_escalation(single_critique, critic_cfg)
+                if escalate:
+                    escalated = True
+                    trace.append(f"Critic: cascade escalated — {'; '.join(reasons)}")
+                    critique, scorer_overalls, disagreements, scorer_notes = _score_with_council(
+                        touches=touches,
+                        company=company,
+                        evidence_context=evidence_context,
+                        tenant=tenant,
+                        critic_cfg=critic_cfg,
+                        api_key=api_key,
+                        tracker=tracker,
+                        seed_critique=single_critique,
+                    )
+                else:
+                    escalated = False
+                    critique = single_critique
+                    scorer_overalls = [single_critique.overall_quality]
+                    disagreements = []
+                    scorer_notes = single_notes
+                    council_size = 1
+                    trace.append("Critic: cascade — single rater clean, full council skipped")
+        else:
+            critique, scorer_overalls, disagreements, scorer_notes = _score_with_council(
+                touches=touches,
+                company=company,
+                evidence_context=evidence_context,
+                tenant=tenant,
+                critic_cfg=critic_cfg,
+                api_key=api_key,
+                tracker=tracker,
+            )
 
         if critique is None:
             logger.warning("Critic: all %d scorer call(s) failed — returning neutral result", council_size)

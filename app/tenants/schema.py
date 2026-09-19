@@ -117,6 +117,36 @@ class CriticConfig(BaseModel):
             "Mixing models adds rater diversity; temperatures vary per scorer."
         ),
     )
+    cascade_enabled: bool = Field(
+        default=False,
+        description=(
+            "B4 cascade: run ONE scorer first and convene the full council only "
+            "when the single score is borderline or gate-relevant risk exists. "
+            "False (default) = full council every run (original behavior)."
+        ),
+    )
+    cascade_borderline_low: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="Cascade escalates when the single rater's mean is below this.",
+    )
+    cascade_borderline_high: int = Field(
+        default=4,
+        ge=1,
+        le=5,
+        description=(
+            "Cascade escalates when the single rater's mean is at or above this "
+            "but below 5 (5 = clear approve, no escalation)."
+        ),
+    )
+    cascade_low_confidence_verdicts: List[str] = Field(
+        default_factory=lambda: ["needs_edit", "needs_more_research", "do_not_send_yet"],
+        description=(
+            "Cascade escalates when the single rater's gate verdict is in this "
+            "list (i.e. anything short of a clean approve goes to the panel)."
+        ),
+    )
     best_of_n: int = Field(
         default=1,
         ge=1,
