@@ -27,6 +27,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.prompts import load_prompt
 from app.services.humanizer_rules import humanize_angle_draft, humanize_sequence
+from app.services.model_router import build_client
 from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import AngleCopy, TenantConfig
 
@@ -123,13 +124,12 @@ def _generate_observations(
         return _default_observations(company, industry, tenant)
 
     llm_kwargs: dict = {"callbacks": [tracker]} if tracker is not None else {}
-    llm = ChatAnthropic(
-        model=MODEL,
+    llm = build_client(
+        tenant.models.route_for("observations"),
         api_key=api_key,
         max_tokens=900,
         temperature=0.4,
-        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-        **llm_kwargs,
+        extra_kwargs=llm_kwargs,
     )
     structured = llm.with_structured_output(HumanizerObservations)
 

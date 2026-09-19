@@ -36,6 +36,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, model_validator
 
 from app.services.humanizer_rules import humanize
+from app.services.model_router import build_client
 from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import CriticConfig, TenantConfig
 
@@ -276,14 +277,26 @@ def _score_with_council(
     """
     size = max(1, critic_cfg.council_size)
 
+    scorer_route = tenant.models.route_for("gate")
+    scorer_route = scorer_route.model_copy(update={"node": "gate"})
+
     def score_one(idx: int) -> SequenceCritique:
         scorer_kwargs: dict = {"callbacks": [tracker]} if tracker is not None else {}
-        llm = ChatAnthropic(
-            model=_model_for_scorer(critic_cfg, idx),
+        # Anthropic scorers may be model-mixed via critic.council_models (rater
+        # diversity); non-Anthropic providers use the route's model for all
+        # scorers (their model ids are provider-specific already).
+        if scorer_route.provider == "anthropic":
+            route = scorer_route.model_copy(
+                update={"model": _model_for_scorer(critic_cfg, idx)}
+            )
+        else:
+            route = scorer_route
+        llm = build_client(
+            route,
             api_key=api_key,
             max_tokens=4000,
             temperature=_temperature_for_scorer(idx),
-            **scorer_kwargs,
+            extra_kwargs=scorer_kwargs,
         )
         critic_llm = llm.with_structured_output(SequenceCritique)
         return critic_llm.invoke(
@@ -759,12 +772,12 @@ def _rewrite_failing_touches(
     }
 
     rewriter_kwargs: dict = {"callbacks": [tracker]} if tracker is not None else {}
-    rewriter_llm = ChatAnthropic(
-        model=DEFAULT_MODEL,
+    rewriter_llm = build_client(
+        tenant.models.route_for("rewriter"),
         api_key=api_key,
         max_tokens=300,
         temperature=0.4,
-        **rewriter_kwargs,
+        extra_kwargs=rewriter_kwargs,
     )
     rewriter_system = _build_rewriter_system(tenant)
 
@@ -939,12 +952,12 @@ def run_critic(state: BDRState) -> dict:
         # --- 3. Quality gate on the FINAL (post-rewrite) sequence ----------
         panel_context = _build_panel_context(scorer_overalls, disagreements)
         gate_kwargs: dict = {"callbacks": [tracker]}
-        gate_llm = ChatAnthropic(
-            model=DEFAULT_MODEL,
+        gate_llm = build_client(
+            tenant.models.route_for("gate"),
             api_key=api_key,
             max_tokens=4000,
             temperature=0.2,
-            **gate_kwargs,
+            extra_kwargs=gate_kwargs,
         ).with_structured_output(QualityGate)
         gate_human_msg = _build_quality_gate_human_message(
             touches=touches,

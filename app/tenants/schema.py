@@ -18,7 +18,7 @@ threaded through BDRState["tenant"] so every agent reads from the same source.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -284,6 +284,75 @@ class HumanizerCopy(BaseModel):
         raise KeyError(f"No copy for angle {key!r}")
 
 
+class ModelRoute(BaseModel):
+    """One node's model route: which provider and model runs that node."""
+    model_config = ConfigDict(extra="forbid")
+
+    node: str = Field(
+        default="",
+        description="Injected by ModelRoutingConfig.route_for(); not set in YAML.",
+    )
+    provider: Literal["anthropic", "openai-compatible"] = Field(
+        default="anthropic",
+        description=(
+            "'anthropic' (default) or 'openai-compatible' (any OpenAI-API-compatible "
+            "endpoint, e.g. GLM Flash free tier, vLLM, OpenRouter)."
+        ),
+    )
+    model: str = Field(description="Provider-specific model id.")
+    base_url: str = Field(
+        default="",
+        description="openai-compatible only: the endpoint base URL.",
+    )
+    api_key_env: str = Field(
+        default="OPENAI_COMPATIBLE_API_KEY",
+        description="Env var holding the endpoint's API key (openai-compatible only).",
+    )
+
+
+class ModelRoutingConfig(BaseModel):
+    """Per-node model map. Defaults reproduce the pre-B2 hardcoded behavior."""
+    model_config = ConfigDict(extra="forbid")
+
+    research_summary: ModelRoute = Field(
+        default_factory=lambda: ModelRoute(model="claude-haiku-4-5-20251001"),
+        description="Research-summary summarisation call in enrichment (cheap tier).",
+    )
+    icp: ModelRoute = Field(
+        default_factory=lambda: ModelRoute(model="claude-haiku-4-5-20251001"),
+        description="ICP tier classification in enrichment (cheap tier).",
+    )
+    strategist: ModelRoute = Field(
+        default_factory=lambda: ModelRoute(model="claude-sonnet-4-6"),
+        description="Angle selection (strongest reasoning node).",
+    )
+    observations: ModelRoute = Field(
+        default_factory=lambda: ModelRoute(model="claude-sonnet-4-6"),
+        description="Humanizer observation generation (craft-critical).",
+    )
+    rewriter: ModelRoute = Field(
+        default_factory=lambda: ModelRoute(model="claude-sonnet-4-6"),
+        description="Critic rewrite calls (craft-critical).",
+    )
+    gate: ModelRoute = Field(
+        default_factory=lambda: ModelRoute(model="claude-sonnet-4-6"),
+        description="Critic quality-gate call.",
+    )
+
+    def route_for(self, node: str) -> ModelRoute:
+        """Resolved route for a known node (raises on unknown node names)."""
+        try:
+            route = getattr(self, node)
+        except AttributeError as exc:
+            raise KeyError(
+                f"Unknown model route node {node!r}. Known: research_summary, icp, "
+                "strategist, observations, rewriter, gate."
+            ) from exc
+        if not route.node:
+            route = route.model_copy(update={"node": node})
+        return route
+
+
 class TenantConfig(BaseModel):
     """Top-level tenant config. One per `tenants/<slug>/` folder."""
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
@@ -299,6 +368,7 @@ class TenantConfig(BaseModel):
     sender: SenderConfig
     crm: CRMConfig = Field(default_factory=CRMConfig)
     critic: CriticConfig = Field(default_factory=CriticConfig)
+    models: ModelRoutingConfig = Field(default_factory=ModelRoutingConfig)
     angles: List[OutreachAngle] = Field(min_length=3, max_length=3)
 
     # Loaded from sibling files, not config.yaml itself

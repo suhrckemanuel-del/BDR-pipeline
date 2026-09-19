@@ -107,9 +107,44 @@ sender:
 crm:
   enabled: false                      # show Notion sync UI for this tenant?
   notion_database_id: null            # optional override of NOTION_DATABASE_ID
+
+models: {}                            # optional per-node model routes (see below)
 ```
 
 The schema is enforced (`extra="forbid"` — unknown keys raise validation errors).
+
+### Per-node model routes (`models:`)
+
+Each pipeline node's LLM is tenant-configurable. Defaults reproduce the
+built-in tiering: cheap Haiku for research summarisation and ICP
+classification, Sonnet for angle selection, observation writing, rewrites,
+and the quality gate.
+
+```yaml
+models:
+  strategist:
+    provider: anthropic               # default
+    model: claude-haiku-4-5-20251001  # cheaper tier for angle picking
+  icp:
+    provider: openai-compatible       # any OpenAI-API-compatible endpoint
+    model: glm-4-flash                # e.g. a free/cheap tier
+    base_url: https://open.bigmodel.cn/api/paas/v4
+    api_key_env: GLM_API_KEY          # env var holding the endpoint key
+```
+
+Known nodes: `research_summary`, `icp`, `strategist`, `observations`,
+`rewriter`, `gate`. `check_tenant.py` validates the shape (including that
+openai-compatible routes carry a `base_url`).
+
+OpenAI-compatible providers need the optional package
+`pip install langchain-openai`. Every provider goes through the same
+structured-output contract — no provider-specific text parsing exists.
+
+> **Legal note:** routing prospect data (company names, contact details)
+> through a third-party endpoint moves that data outside Anthropic's
+> processing agreements. Choosing a non-Anthropic route for a tenant is a
+> per-tenant legal/compliance decision — verify the endpoint's data-handling
+> terms (and GDPR transfer posture for EU contacts) before enabling it.
 
 ### `icp.txt`
 

@@ -15,6 +15,7 @@ import os
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.services.model_router import build_client
 from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import TenantConfig
 
@@ -184,13 +185,12 @@ def run_strategist(state: BDRState) -> dict:
         return {"error": "ANTHROPIC_API_KEY not set.", "agent_trace": trace}
 
     tracker = UsageTracker(node="strategist", default_model=MODEL)
-    llm = ChatAnthropic(
-        model=MODEL,
+    llm = build_client(
+        tenant.models.route_for("strategist"),
         api_key=api_key,
         max_tokens=800,
         temperature=0.3,
-        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-        callbacks=[tracker],
+        extra_kwargs={"callbacks": [tracker]},
     )
     structured = llm.with_structured_output(StrategyDecision)
 

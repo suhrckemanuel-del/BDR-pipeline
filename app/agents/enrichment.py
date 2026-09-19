@@ -22,6 +22,7 @@ import requests
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.services.model_router import build_client
 from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import TenantConfig
 
@@ -767,13 +768,12 @@ def _classify_icp(
     icp_kwargs: dict = {}
     if tracker is not None:
         icp_kwargs["callbacks"] = [tracker]
-    llm = ChatAnthropic(
-        model=HAIKU_MODEL,
+    llm = build_client(
+        tenant.models.route_for("icp"),
         api_key=api_key,
         max_tokens=300,
         temperature=0.0,
-        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-        **icp_kwargs,
+        extra_kwargs=icp_kwargs,
     )
     structured = llm.with_structured_output(ICPClassification)
 
@@ -873,13 +873,12 @@ def _summarise(
     llm_kwargs: dict = {}
     if tracker is not None:
         llm_kwargs["callbacks"] = [tracker]
-    llm = ChatAnthropic(
-        model=HAIKU_MODEL,
+    llm = build_client(
+        tenant.models.route_for("research_summary"),
         api_key=api_key,
         max_tokens=500,
         temperature=0.2,
-        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-        **llm_kwargs,
+        extra_kwargs=llm_kwargs,
     )
     system_msg = SystemMessage(
         content=_build_research_system_prompt(tenant),

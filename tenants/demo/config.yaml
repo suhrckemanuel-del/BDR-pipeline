@@ -63,3 +63,18 @@ critic:
     - claude-sonnet-4-6
     - claude-haiku-4-5-20251001
   best_of_n: 1
+
+# Per-node model routes (B2). Uncomment to override; defaults are
+# Haiku for research_summary + icp, Sonnet for everything craft-critical.
+# Example — route ICP classification through a free/cheap OpenAI-compatible
+# endpoint (needs `pip install langchain-openai` and the env var below):
+# models:
+#   icp:
+#     provider: openai-compatible
+#     model: glm-4-flash
+#     base_url: https://open.bigmodel.cn/api/paas/v4
+#     api_key_env: GLM_API_KEY
+# models:
+#   strategist:
+#     provider: anthropic
+#     model: claude-haiku-4-5-20251001   # cheap tier for angle picking

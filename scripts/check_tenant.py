@@ -40,8 +40,49 @@ def check(tenant_id: str) -> bool:
     icp_lines = len(t.icp_definition.splitlines())
     print(f"  icp.txt:   {icp_lines} lines")
     print(f"  prospects: {t.prospects_csv} (exists: {t.prospects_csv.exists()})")
+
+    # Model routing (B2): validate every node's route resolvability.
+    problems = _check_model_routes(t)
+    if problems:
+        for problem in problems:
+            print(f"  FAIL: {problem}")
+        return False
+    routes = t.models
+    providers = {
+        node: getattr(routes, node).provider
+        for node in ("research_summary", "icp", "strategist", "observations", "rewriter", "gate")
+    }
+    non_default = {n: p for n, p in providers.items() if p != "anthropic"}
+    if non_default:
+        print(f"  models:    {non_default} (non-Anthropic routes)")
+    else:
+        print("  models:    all anthropic (defaults)")
+
     print(f"  OK")
     return True
+
+
+def _check_model_routes(tenant) -> list[str]:
+    """Static validation of the per-node model map.
+
+    openai-compatible routes are checked for base_url presence and the env
+    var's *existence in .env.example-style documentation* is the operator's
+    job at runtime; here we only catch config-shape errors without needing
+    network or secrets.
+    """
+    problems: list[str] = []
+    for node in (
+        "research_summary", "icp", "strategist",
+        "observations", "rewriter", "gate",
+    ):
+        route = tenant.models.route_for(node)
+        if not route.model:
+            problems.append(f"models.{node}: empty model id")
+        if route.provider == "openai-compatible" and not route.base_url:
+            problems.append(
+                f"models.{node}: provider 'openai-compatible' requires base_url"
+            )
+    return problems
 
 
 def main() -> int:
