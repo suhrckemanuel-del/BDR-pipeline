@@ -15,7 +15,6 @@ import os
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.prompts import load_prompt
 from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import TenantConfig
 
@@ -62,8 +61,7 @@ def _build_system_prompt(tenant: TenantConfig) -> str:
         "over-specific claims.\n\n"
         "The pain_signal and cpo_hypothesis you produce will feed the email writer. "
         "Write them so a human reader of the resulting email would say 'yes, that's "
-        "us' — falsifiable, not boilerplate.\n\n"
-        + load_prompt("cold_email")
+        "us' — falsifiable, not boilerplate."
     )
 
 
