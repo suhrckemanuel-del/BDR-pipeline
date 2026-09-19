@@ -113,6 +113,42 @@ if inputs.clear_last_result_clicked:
     st.rerun()
 
 # ---------------------------------------------------------------------------
+# Run store — persisted history + review queue (fails soft when unavailable)
+# ---------------------------------------------------------------------------
+from app.services.run_store import RunStore, hydrate_state  # noqa: E402
+
+
+def _handle_store_actions() -> None:
+    """Approve-queue actions and run hydration from the sidebar."""
+    if not (inputs.approve_run_id or inputs.open_run_id):
+        return
+    store = RunStore()
+    try:
+        if not store.available():
+            return
+        if inputs.approve_run_id:
+            store.set_approved(inputs.approve_run_id, True)
+            st.toast(f"Approved run {inputs.approve_run_id}")
+        if inputs.open_run_id:
+            loaded = store.load_state(inputs.open_run_id)
+            if loaded:
+                state = hydrate_state(loaded)
+                st.session_state["last_final_state"] = state
+                st.session_state["last_tenant_id"] = state.get("tenant_id") or tenant.tenant_id
+                st.session_state["last_company"] = state.get("company") or "persisted run"
+                st.session_state["last_industry"] = state.get("industry") or ""
+                st.session_state["last_run_completed_at"] = state.get("updated_at") or ""
+    except Exception as exc:  # store problems must never block the UI
+        st.warning(f"Run store unavailable: {exc}")
+    finally:
+        store.close()
+    if inputs.approve_run_id or inputs.open_run_id:
+        st.rerun()
+
+
+_handle_store_actions()
+
+# ---------------------------------------------------------------------------
 # Routing — empty / running / complete
 # ---------------------------------------------------------------------------
 if not inputs.run_clicked:
@@ -138,6 +174,17 @@ workflow = _build_workflow_for(tenant.tenant_id)
 
 panel = st.empty()
 final_state: dict | None = None
+_run_store = RunStore()
+_run_id: str | None = None
+try:
+    if _run_store.available():
+        _run_id = _run_store.start_run({
+            "tenant": tenant,
+            "company": inputs.company,
+            "industry": inputs.industry,
+        })
+except Exception:
+    _run_id = None  # store unavailable — run proceeds unpersisted
 
 # Map trace lines back to stage keys so the nav can light up the active stage.
 _STAGE_KEYS = [k for k, _ in STAGE_LABELS]
@@ -165,6 +212,12 @@ try:
         next_stage = next((k for k in _STAGE_KEYS if k not in done_stages), "")
         active_stage = next_stage or ""
 
+        if _run_id:
+            try:
+                _run_store.update_run(_run_id, state)
+            except Exception:
+                _run_id = None  # stop persisting rather than break the run
+
         with panel.container():
             render_running(tenant, inputs.company, active_stage, tuple(done_stages))
             st.info(f"Running pipeline for **{inputs.company}** — {active_stage or 'finishing up'}…")
@@ -189,6 +242,14 @@ st.session_state["last_tenant_id"] = tenant.tenant_id
 st.session_state["last_company"] = final_state.get("company") or inputs.company
 st.session_state["last_industry"] = final_state.get("industry") or inputs.industry
 st.session_state["last_run_completed_at"] = datetime.now(timezone.utc).isoformat()
+
+if _run_id:
+    try:
+        _run_store.finish_run(_run_id, final_state)
+    except Exception:
+        pass
+    finally:
+        _run_store.close()
 
 # ---------------------------------------------------------------------------
 # Render results

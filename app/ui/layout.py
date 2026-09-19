@@ -31,6 +31,8 @@ class SidebarInputs:
     sync_to_notion: bool
     run_clicked: bool
     clear_last_result_clicked: bool
+    open_run_id: Optional[str] = None
+    approve_run_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +153,8 @@ def render_sidebar(
                 use_container_width=True,
             )
 
+        open_run_id, approve_run_id = _render_run_history(tenant)
+
     return SidebarInputs(
         selected_tenant=selection,
         company=company.strip(),
@@ -159,7 +163,62 @@ def render_sidebar(
         sync_to_notion=sync_to_notion,
         run_clicked=run_clicked,
         clear_last_result_clicked=clear_last_result_clicked,
+        open_run_id=open_run_id,
+        approve_run_id=approve_run_id,
     )
+
+
+def _render_run_history(tenant: TenantConfig) -> tuple[Optional[str], Optional[str]]:
+    """Recent runs + review queue from the run store. Fails soft when unavailable."""
+    from app.services.run_store import RunStore
+
+    try:
+        store = RunStore()
+        if not store.available():
+            return None, None
+    except Exception:
+        return None, None
+
+    open_run_id: Optional[str] = None
+    approve_run_id: Optional[str] = None
+
+    try:
+        queue = store.review_queue(tenant_id=tenant.tenant_id, limit=10)
+        if queue:
+            C.sidebar_section(f"Review queue · {len(queue)}")
+            labels = {r.run_id: f"{r.company} · {r.status} · {r.created_at[:16]}" for r in queue}
+            chosen = st.selectbox(
+                "Awaiting approval",
+                options=list(labels.keys()),
+                format_func=lambda rid: labels.get(rid, rid),
+                label_visibility="collapsed",
+                key="ui_review_pick",
+            )
+            col_open, col_ok = st.columns(2)
+            if col_open.button("Open", key="ui_review_open", use_container_width=True):
+                open_run_id = chosen
+            if col_ok.button("Approve", key="ui_review_approve", type="primary", use_container_width=True):
+                approve_run_id = chosen
+
+        recent = store.recent_runs(tenant_id=tenant.tenant_id, limit=8)
+        if recent:
+            C.sidebar_section("Recent runs")
+            labels = {r.run_id: f"{r.company} · {r.status} · {r.created_at[:16]}" for r in recent}
+            chosen = st.selectbox(
+                "Past runs",
+                options=list(labels.keys()),
+                format_func=lambda rid: labels.get(rid, rid),
+                label_visibility="collapsed",
+                key="ui_recent_pick",
+            )
+            if st.button("Open run", key="ui_recent_open", use_container_width=True):
+                open_run_id = chosen
+    except Exception:
+        return None, None
+    finally:
+        store.close()
+
+    return open_run_id, approve_run_id
 
 
 def _load_prospects(tenant: TenantConfig) -> list[dict]:

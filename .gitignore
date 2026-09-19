@@ -61,3 +61,6 @@ tenants/*/data/insights.csv
 # Office / temp files
 *.tmp
 ~$*
+
+# Run store (A5)
+runs/
