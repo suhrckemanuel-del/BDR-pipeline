@@ -16,6 +16,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.prompts import load_prompt
+from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import TenantConfig
 
 from .state import (
@@ -184,12 +185,14 @@ def run_strategist(state: BDRState) -> dict:
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not set.", "agent_trace": trace}
 
+    tracker = UsageTracker(node="strategist", default_model=MODEL)
     llm = ChatAnthropic(
         model=MODEL,
         api_key=api_key,
         max_tokens=800,
         temperature=0.3,
         extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        callbacks=[tracker],
     )
     structured = llm.with_structured_output(StrategyDecision)
 
@@ -228,4 +231,6 @@ def run_strategist(state: BDRState) -> dict:
         decision.angle_name = tenant.angle_by_key("angle1").name
 
     trace.append(f"Strategist: chose {decision.recommended_angle} ({decision.angle_name})")
-    return {"strategy": decision, "agent_trace": trace}
+    node_update = {"strategy": decision, "agent_trace": trace}
+    node_update.update(capture_usage(state, "strategist", tracker))
+    return node_update

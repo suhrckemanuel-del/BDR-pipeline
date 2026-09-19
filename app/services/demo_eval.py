@@ -48,6 +48,10 @@ METRIC_FIELDS = [
     "quality_gate_verdict",
     "risk_flag_count",
     "unsupported_claim_count",
+    "llm_calls",
+    "input_tokens",
+    "output_tokens",
+    "cost_usd",
     "report_generated",
     "notes_errors",
 ]
@@ -405,6 +409,7 @@ def metrics_from_state(state: dict, runtime_seconds: float, completed: bool) -> 
             "quality_gate_verdict": _get(gate, "verdict", ""),
             "risk_flag_count": len(_get(gate, "risk_flags") or []),
             "unsupported_claim_count": _get(gate, "unsupported_claim_count", ""),
+            **_token_usage_cells(state),
             "report_generated": "yes" if report_generated else "no",
             "notes_errors": " | ".join(notes),
         }
@@ -483,6 +488,7 @@ def build_evals_markdown(result: DemoEvalResult, csv_path: Path | None = None) -
             "",
             table,
             "",
+            _cost_summary_section(rows),
             "## Limitations",
             "",
             "- Demo prospects are anonymized/synthetic examples.",
@@ -537,8 +543,51 @@ def _industry_context(state: dict) -> str:
     return " | ".join(part for part in parts if part)
 
 
+def _cost_summary_section(rows: list[dict[str, Any]]) -> str:
+    """Cost-per-prospect summary block for the eval markdown."""
+    import statistics
+
+    costs = [float(r["cost_usd"]) for r in rows if r.get("cost_usd") not in ("", None)]
+    if not costs:
+        return "\n".join(
+            (
+                "## Cost per Prospect",
+                "",
+                "- No token usage recorded (sample mode runs make no LLM calls).",
+                "",
+            )
+        )
+    tokens_in = sum(int(r.get("input_tokens") or 0) for r in rows)
+    tokens_out = sum(int(r.get("output_tokens") or 0) for r in rows)
+    return "\n".join(
+        (
+            "## Cost per Prospect",
+            "",
+            f"- Accounts with usage data: {len(costs)}",
+            f"- Total input tokens: {tokens_in:,} · output: {tokens_out:,}",
+            f"- Mean cost per prospect: ${sum(costs) / len(costs):.4f}",
+            f"- Median cost per prospect: ${statistics.median(costs):.4f}",
+            "",
+        )
+    )
+
+
 def _ordered_row(row: dict[str, Any]) -> dict[str, Any]:
     return {field: row.get(field, "") for field in METRIC_FIELDS}
+
+
+def _token_usage_cells(state: dict) -> dict[str, Any]:
+    """Flatten state['token_usage'] into CSV cells (blank when no LLM traffic)."""
+    usage = state.get("token_usage") or {}
+    totals = usage.get("totals") or {}
+    if not totals:
+        return {"llm_calls": "", "input_tokens": "", "output_tokens": "", "cost_usd": ""}
+    return {
+        "llm_calls": totals.get("calls", 0),
+        "input_tokens": totals.get("input_tokens", 0),
+        "output_tokens": totals.get("output_tokens", 0),
+        "cost_usd": f"{totals.get('cost_usd', 0.0):.6f}",
+    }
 
 
 def _markdown_table(rows: list[dict[str, Any]]) -> str:

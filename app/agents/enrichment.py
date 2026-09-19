@@ -22,6 +22,7 @@ import requests
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import TenantConfig
 
 from .state import (
@@ -747,6 +748,7 @@ def _classify_icp(
     score_breakdown: dict,
     tenant: TenantConfig,
     degradations: List[str] | None = None,
+    tracker: "UsageTracker | None" = None,
 ) -> ICPClassification:
     degradations = degradations if degradations is not None else []
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -762,12 +764,16 @@ def _classify_icp(
             score_breakdown=score_breakdown,
         )
 
+    icp_kwargs: dict = {}
+    if tracker is not None:
+        icp_kwargs["callbacks"] = [tracker]
     llm = ChatAnthropic(
         model=HAIKU_MODEL,
         api_key=api_key,
         max_tokens=300,
         temperature=0.0,
         extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        **icp_kwargs,
     )
     structured = llm.with_structured_output(ICPClassification)
 
@@ -833,6 +839,7 @@ def _summarise(
     contacts: List[ContactLead],
     tenant: TenantConfig,
     degradations: List[str] | None = None,
+    tracker: "UsageTracker | None" = None,
 ) -> str:
     degradations = degradations if degradations is not None else []
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -863,12 +870,16 @@ def _summarise(
         f"Contacts (Hunter.io):\n{contact_block}\n\n"
         f"Summarise through the {tenant.persona.title} lens."
     )
+    llm_kwargs: dict = {}
+    if tracker is not None:
+        llm_kwargs["callbacks"] = [tracker]
     llm = ChatAnthropic(
         model=HAIKU_MODEL,
         api_key=api_key,
         max_tokens=500,
         temperature=0.2,
         extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        **llm_kwargs,
     )
     system_msg = SystemMessage(
         content=_build_research_system_prompt(tenant),
@@ -964,10 +975,11 @@ def run_enrichment(state: BDRState) -> dict:
     )
 
     trace.append("Enrichment: synthesising research summary (Haiku)")
-    summary = _summarise(company, industry, signals, job_signals, contacts, tenant, degradations)
+    llm_tracker = UsageTracker(node="enrichment", default_model=HAIKU_MODEL)
+    summary = _summarise(company, industry, signals, job_signals, contacts, tenant, degradations, tracker=llm_tracker)
 
     trace.append("Enrichment: classifying ICP tier (Haiku)")
-    icp = _classify_icp(company, industry, summary, icp_score, score_breakdown, tenant, degradations)
+    icp = _classify_icp(company, industry, summary, icp_score, score_breakdown, tenant, degradations, tracker=llm_tracker)
     trace.append(f"Enrichment: {icp.tier_label} · score {icp_score}/100")
 
     evidence_cards = _build_evidence_cards(
@@ -1018,9 +1030,11 @@ def run_enrichment(state: BDRState) -> dict:
             "composite_intent_signals": score_breakdown.get("intent_signals", 0),
         },
     )
-    return {
+    node_update = {
         "enrichment": enrichment,
         "trigger_headline": trigger_headline,
         "degradations": degradations,
         "agent_trace": trace,
     }
+    node_update.update(capture_usage(state, "enrichment", llm_tracker))
+    return node_update

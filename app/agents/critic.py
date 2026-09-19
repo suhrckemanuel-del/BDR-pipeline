@@ -36,6 +36,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, model_validator
 
 from app.services.humanizer_rules import humanize
+from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import CriticConfig, TenantConfig
 
 from .state import BDRState, ProspectCard, SequenceTouch
@@ -265,6 +266,7 @@ def _score_with_council(
     tenant: TenantConfig,
     critic_cfg: CriticConfig,
     api_key: str,
+    tracker: "UsageTracker | None" = None,
 ) -> tuple[SequenceCritique | None, list[float], list[str], list[str]]:
     """
     Run independent council scorers in parallel, then aggregate.
@@ -275,11 +277,13 @@ def _score_with_council(
     size = max(1, critic_cfg.council_size)
 
     def score_one(idx: int) -> SequenceCritique:
+        scorer_kwargs: dict = {"callbacks": [tracker]} if tracker is not None else {}
         llm = ChatAnthropic(
             model=_model_for_scorer(critic_cfg, idx),
             api_key=api_key,
             max_tokens=4000,
             temperature=_temperature_for_scorer(idx),
+            **scorer_kwargs,
         )
         critic_llm = llm.with_structured_output(SequenceCritique)
         return critic_llm.invoke(
@@ -738,6 +742,7 @@ def _rewrite_failing_touches(
     evidence_context: str,
     tenant: TenantConfig,
     api_key: str,
+    tracker: "UsageTracker | None" = None,
 ) -> tuple[ProspectCard, int, list[str]]:
     """
     Rewrite the first paragraph of each failing email touch.
@@ -753,11 +758,13 @@ def _rewrite_failing_touches(
         t.touch_number: t for t in updated_card.sequence.touches
     }
 
+    rewriter_kwargs: dict = {"callbacks": [tracker]} if tracker is not None else {}
     rewriter_llm = ChatAnthropic(
         model=DEFAULT_MODEL,
         api_key=api_key,
         max_tokens=300,
         temperature=0.4,
+        **rewriter_kwargs,
     )
     rewriter_system = _build_rewriter_system(tenant)
 
@@ -864,6 +871,7 @@ def run_critic(state: BDRState) -> dict:
         council_size = max(1, critic_cfg.council_size)
 
         # --- 1. Council scoring -------------------------------------------
+        tracker = UsageTracker(node="critic", default_model=DEFAULT_MODEL)
         critique, scorer_overalls, disagreements, scorer_notes = _score_with_council(
             touches=touches,
             company=company,
@@ -871,6 +879,7 @@ def run_critic(state: BDRState) -> dict:
             tenant=tenant,
             critic_cfg=critic_cfg,
             api_key=api_key,
+            tracker=tracker,
         )
 
         if critique is None:
@@ -920,6 +929,7 @@ def run_critic(state: BDRState) -> dict:
                 evidence_context=evidence_context,
                 tenant=tenant,
                 api_key=api_key,
+                tracker=tracker,
             )
             trace.extend(rewrite_trace)
             touches = card.sequence.touches if card.sequence else touches
@@ -928,11 +938,13 @@ def run_critic(state: BDRState) -> dict:
 
         # --- 3. Quality gate on the FINAL (post-rewrite) sequence ----------
         panel_context = _build_panel_context(scorer_overalls, disagreements)
+        gate_kwargs: dict = {"callbacks": [tracker]}
         gate_llm = ChatAnthropic(
             model=DEFAULT_MODEL,
             api_key=api_key,
             max_tokens=4000,
             temperature=0.2,
+            **gate_kwargs,
         ).with_structured_output(QualityGate)
         gate_human_msg = _build_quality_gate_human_message(
             touches=touches,
@@ -972,11 +984,13 @@ def run_critic(state: BDRState) -> dict:
             agreement_level=agreement,  # type: ignore[arg-type]
         )
 
-        return {
+        node_update = {
             "card": card,
             "critic_result": critic_result,
             "agent_trace": trace,
         }
+        node_update.update(capture_usage(state, "critic", tracker))
+        return node_update
 
     except Exception as exc:  # noqa: BLE001
         logger.exception("Critic node failed: %s", exc)

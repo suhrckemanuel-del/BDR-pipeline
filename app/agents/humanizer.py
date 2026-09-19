@@ -27,6 +27,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.prompts import load_prompt
 from app.services.humanizer_rules import humanize_angle_draft, humanize_sequence
+from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import AngleCopy, TenantConfig
 
 from .state import (
@@ -115,17 +116,20 @@ def _generate_observations(
     tenant: TenantConfig,
     trigger_headline: str = "",
     evidence_context: str = "",
+    tracker: "UsageTracker | None" = None,
 ) -> HumanizerObservations:
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return _default_observations(company, industry, tenant)
 
+    llm_kwargs: dict = {"callbacks": [tracker]} if tracker is not None else {}
     llm = ChatAnthropic(
         model=MODEL,
         api_key=api_key,
         max_tokens=900,
         temperature=0.4,
         extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        **llm_kwargs,
     )
     structured = llm.with_structured_output(HumanizerObservations)
 
@@ -396,6 +400,7 @@ def run_humanizer(state: BDRState) -> dict:
 
     trace = list(state.get("agent_trace", []))
     trace.append("Humanizer: requesting observations under strict schema (cached prompt)")
+    obs_tracker = UsageTracker(node="humanizer", default_model=MODEL)
 
     trigger_headline = state.get("trigger_headline", "")
     contact_first_name = ""
@@ -411,6 +416,7 @@ def run_humanizer(state: BDRState) -> dict:
         tenant=tenant,
         trigger_headline=trigger_headline,
         evidence_context=_format_evidence_context(enrichment),
+        tracker=obs_tracker,
     )
 
     trace.append("Humanizer: assembling DMs + emails via tenant copy banks")
@@ -453,4 +459,6 @@ def run_humanizer(state: BDRState) -> dict:
         f"Humanizer: card assembled + {len(sequence.touches)}-touch sequence + "
         "29-rule filter applied (incl. Day 0 LinkedIn connect)"
     )
-    return {"card": card, "agent_trace": trace}
+    node_update = {"card": card, "agent_trace": trace}
+    node_update.update(capture_usage(state, "humanizer", obs_tracker))
+    return node_update

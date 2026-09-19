@@ -292,3 +292,7 @@ class BDRState(TypedDict, total=False):
     # read-modify-write convention: seed from prior state, append, return the
     # full list — the default last-value channel replaces otherwise.
     degradations: List[str]
+    # Per-node token/cost ledger (B0). Nodes merge UsageTracker snapshots via
+    # app.services.token_accounting.capture_usage using the same RMW convention
+    # as degradations. Absent when a run made zero LLM calls.
+    token_usage: dict

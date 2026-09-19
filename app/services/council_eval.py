@@ -313,6 +313,8 @@ def build_markdown_report(
         f"- Agreement levels: {fmt_dist(summary.get('agreement_level_counts', {}))}",
         f"- do_not_send_yet agreement (both arms): {summary.get('high_risk_agreement_count', 0)}",
         "",
+        _cost_summary_section(rows),
+        "",
         "## Verdict Distributions",
         "",
         f"- Single-rater arm: {fmt_dist(summary.get('verdicts_single', {}))}",
@@ -395,6 +397,10 @@ CSV_FIELDS = [
     "scorer_spread",
     "disagreements",
     "degradations",
+    "llm_calls",
+    "input_tokens",
+    "output_tokens",
+    "cost_usd",
 ]
 
 
@@ -411,6 +417,34 @@ def _csv_cell(value: Any) -> Any:
     if isinstance(value, list):
         return " | ".join(str(item) for item in value)
     return value
+
+
+def _cost_summary_section(rows: list[dict[str, Any]]) -> str:
+    """Cost-per-prospect summary block for the eval markdown."""
+    costs = [float(r["cost_usd"]) for r in rows if r.get("cost_usd") not in ("", None)]
+    if not costs:
+        return "\n".join(
+            (
+                "## Cost per Prospect",
+                "",
+                "- No token usage recorded (sample mode runs make no LLM calls).",
+                "- Live-run costs land here once B0 measurement data exists.",
+                "",
+            )
+        )
+    tokens_in = sum(int(r.get("input_tokens") or 0) for r in rows)
+    tokens_out = sum(int(r.get("output_tokens") or 0) for r in rows)
+    return "\n".join(
+        (
+            "## Cost per Prospect",
+            "",
+            f"- Accounts with usage data: {len(costs)}",
+            f"- Total input tokens: {tokens_in:,} · output: {tokens_out:,}",
+            f"- Mean cost per prospect: ${sum(costs) / len(costs):.4f}",
+            f"- Median cost per prospect: ${statistics.median(costs):.4f}",
+            "",
+        )
+    )
 
 
 def write_json(result: CouncilEvalResult, summary: dict[str, Any], path: Path) -> None:
@@ -485,6 +519,12 @@ def build_comparison_row(
     row["disagreements"] = council_metrics.get("disagreements", [])
     row["degradations"] = list(single_state.get("degradations") or [])
     row["runtime_seconds"] = f"{runtime_seconds:.2f}"
+
+    usage = (single_state.get("token_usage") or {}).get("totals") or {}
+    row["llm_calls"] = usage.get("calls", "")
+    row["input_tokens"] = usage.get("input_tokens", "")
+    row["output_tokens"] = usage.get("output_tokens", "")
+    row["cost_usd"] = f"{usage.get('cost_usd', 0.0):.6f}" if usage else ""
     return row
 
 
