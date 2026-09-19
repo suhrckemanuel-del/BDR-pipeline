@@ -27,7 +27,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.prompts import load_prompt
 from app.services.humanizer_rules import humanize_angle_draft, humanize_sequence
-from app.services.model_router import build_client
+from app.services.model_router import build_client, cached_system_message
 from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import AngleCopy, TenantConfig
 
@@ -133,9 +133,8 @@ def _generate_observations(
     )
     structured = llm.with_structured_output(HumanizerObservations)
 
-    system_msg = SystemMessage(
-        content=_build_system_prompt(tenant),
-        additional_kwargs={"cache_control": {"type": "ephemeral"}},
+    system_msg = cached_system_message(
+        tenant.models.route_for("observations"), _build_system_prompt(tenant)
     )
 
     trigger_line = f"\nTop trigger headline (use if specific): {trigger_headline}" if trigger_headline else ""

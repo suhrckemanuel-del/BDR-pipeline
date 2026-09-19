@@ -15,7 +15,7 @@ import os
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.services.model_router import build_client
+from app.services.model_router import build_client, cached_system_message
 from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import TenantConfig
 
@@ -194,9 +194,8 @@ def run_strategist(state: BDRState) -> dict:
     )
     structured = llm.with_structured_output(StrategyDecision)
 
-    system_msg = SystemMessage(
-        content=_build_system_prompt(tenant),
-        additional_kwargs={"cache_control": {"type": "ephemeral"}},
+    system_msg = cached_system_message(
+        tenant.models.route_for("strategist"), _build_system_prompt(tenant)
     )
 
     trigger = state.get("trigger_headline", "")

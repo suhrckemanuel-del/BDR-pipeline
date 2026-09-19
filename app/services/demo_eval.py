@@ -52,6 +52,7 @@ METRIC_FIELDS = [
     "input_tokens",
     "output_tokens",
     "cost_usd",
+    "cache_hit_rate",
     "report_generated",
     "notes_errors",
 ]
@@ -581,12 +582,16 @@ def _token_usage_cells(state: dict) -> dict[str, Any]:
     usage = state.get("token_usage") or {}
     totals = usage.get("totals") or {}
     if not totals:
-        return {"llm_calls": "", "input_tokens": "", "output_tokens": "", "cost_usd": ""}
+        return {
+            "llm_calls": "", "input_tokens": "", "output_tokens": "",
+            "cost_usd": "", "cache_hit_rate": "",
+        }
     return {
         "llm_calls": totals.get("calls", 0),
         "input_tokens": totals.get("input_tokens", 0),
         "output_tokens": totals.get("output_tokens", 0),
         "cost_usd": f"{totals.get('cost_usd', 0.0):.6f}",
+        "cache_hit_rate": f"{totals.get('cache_hit_rate', 0.0):.4f}",
     }
 
 

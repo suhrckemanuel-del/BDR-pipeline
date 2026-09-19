@@ -36,7 +36,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, model_validator
 
 from app.services.humanizer_rules import humanize
-from app.services.model_router import build_client
+from app.services.model_router import build_client, cached_system_message
 from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import CriticConfig, TenantConfig
 
@@ -301,7 +301,7 @@ def _score_with_council(
         critic_llm = llm.with_structured_output(SequenceCritique)
         return critic_llm.invoke(
             [
-                SystemMessage(content=_build_critic_system(tenant)),
+                cached_system_message(route, _build_critic_system(tenant)),
                 HumanMessage(content=_build_critic_human_message(touches, company, evidence_context)),
             ]
         )
@@ -772,8 +772,9 @@ def _rewrite_failing_touches(
     }
 
     rewriter_kwargs: dict = {"callbacks": [tracker]} if tracker is not None else {}
+    rewriter_route = tenant.models.route_for("rewriter")
     rewriter_llm = build_client(
-        tenant.models.route_for("rewriter"),
+        rewriter_route,
         api_key=api_key,
         max_tokens=300,
         temperature=0.4,
@@ -802,7 +803,7 @@ def _rewrite_failing_touches(
             try:
                 response = rewriter_llm.invoke(
                     [
-                        SystemMessage(content=rewriter_system),
+                        cached_system_message(rewriter_route, rewriter_system),
                         HumanMessage(content=rewriter_human),
                     ]
                 )
@@ -952,8 +953,9 @@ def run_critic(state: BDRState) -> dict:
         # --- 3. Quality gate on the FINAL (post-rewrite) sequence ----------
         panel_context = _build_panel_context(scorer_overalls, disagreements)
         gate_kwargs: dict = {"callbacks": [tracker]}
+        gate_route = tenant.models.route_for("gate")
         gate_llm = build_client(
-            tenant.models.route_for("gate"),
+            gate_route,
             api_key=api_key,
             max_tokens=4000,
             temperature=0.2,
@@ -970,7 +972,7 @@ def run_critic(state: BDRState) -> dict:
         try:
             quality_gate: QualityGate = gate_llm.invoke(
                 [
-                    SystemMessage(content=_build_quality_gate_system(tenant)),
+                    cached_system_message(gate_route, _build_quality_gate_system(tenant)),
                     HumanMessage(content=gate_human_msg),
                 ]
             )

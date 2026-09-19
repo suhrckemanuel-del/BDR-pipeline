@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from typing import Any, Type
 
+from langchain_core.messages import SystemMessage
 from pydantic import BaseModel
 
 # The default per-node routes. Keys must match ModelRoutingConfig's known
@@ -115,6 +116,31 @@ def build_client(
             base_url=route.base_url,
             **kwargs,
         )
+
+
+def cached_system_message(route: "ModelRoute", text: str) -> SystemMessage:
+    """System message carrying an ephemeral cache breakpoint on Anthropic routes.
+
+    Spike result (2026-09-19, langchain-anthropic==1.4.1 / anthropic==0.96.0):
+    cache_control is only honoured in the CONTENT-BLOCK form —
+    ``SystemMessage(content=[{"type": "text", "text": ..., "cache_control": ...}])``.
+    The ``additional_kwargs`` form used pre-B3 was silently dropped from the
+    request payload (a no-op), so no caching ever occurred before this fix.
+
+    Non-Anthropic routes get a plain system message: cache_control is an
+    Anthropic-only field and must not leak into other providers' payloads.
+    """
+    if route.provider == "anthropic":
+        return SystemMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": text,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        )
+    return SystemMessage(content=text)
 
 
 def resolve_schema_client(

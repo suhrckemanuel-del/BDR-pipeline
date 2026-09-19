@@ -22,7 +22,7 @@ import requests
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.services.model_router import build_client
+from app.services.model_router import build_client, cached_system_message
 from app.services.token_accounting import UsageTracker, capture_usage
 from app.tenants.schema import TenantConfig
 
@@ -777,9 +777,8 @@ def _classify_icp(
     )
     structured = llm.with_structured_output(ICPClassification)
 
-    system_msg = SystemMessage(
-        content=_build_icp_system_prompt(tenant),
-        additional_kwargs={"cache_control": {"type": "ephemeral"}},
+    system_msg = cached_system_message(
+        tenant.models.route_for("icp"), _build_icp_system_prompt(tenant)
     )
     user = (
         f"Company: {company}\n"
@@ -880,9 +879,9 @@ def _summarise(
         temperature=0.2,
         extra_kwargs=llm_kwargs,
     )
-    system_msg = SystemMessage(
-        content=_build_research_system_prompt(tenant),
-        additional_kwargs={"cache_control": {"type": "ephemeral"}},
+    system_msg = cached_system_message(
+        tenant.models.route_for("research_summary"),
+        _build_research_system_prompt(tenant),
     )
     try:
         resp = llm.invoke([system_msg, HumanMessage(content=user)])

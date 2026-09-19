@@ -38,7 +38,21 @@ must be recomputable from them (`mean(cost_usd)` per prospect row).
 | claude-sonnet-4-6 | 3.00 | 15.00 |
 | claude-haiku-4-5 | 1.00 | 5.00 |
 
-Caching discounts (B3) are **not** modeled in this baseline — it predates caching.
+Caching economics (added by B3, ticket #12): cache **reads** are priced at
+10% of the input rate; cache **writes** carry a 25% premium (5-minute TTL).
+The ledger splits `cache_read_tokens` / `cache_creation_tokens` and reports
+`cache_hit_rate` per node and per run.
+
+**B3 spike finding (2026-09-19):** on the pinned `langchain-anthropic==1.4.1`,
+`cache_control` only reaches the request payload in the content-block form.
+The `additional_kwargs` form used since the original build was silently
+dropped from the payload — **no caching was ever active before B3**, which is
+why no cache savings ever appeared in any measurement. All call sites now use
+`model_router.cached_system_message` (content-block form, provider-gated so
+the marker never leaks to non-Anthropic providers).
+
+Live cache-hit evidence lands in the eval CSV's `cache_hit_rate` column and
+`state.token_usage.totals` once a live run seals the baseline.
 
 ## Instrumented call sites (complete audit)
 

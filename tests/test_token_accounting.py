@@ -129,9 +129,10 @@ def test_demo_eval_csv_has_token_columns():
 
 def test_token_usage_cells_blank_and_populated():
     assert _token_usage_cells({}) == {
-        "llm_calls": "", "input_tokens": "", "output_tokens": "", "cost_usd": ""
+        "llm_calls": "", "input_tokens": "", "output_tokens": "",
+        "cost_usd": "", "cache_hit_rate": "",
     }
-    state = {"token_usage": {"totals": {"calls": 3, "input_tokens": 1000, "output_tokens": 200, "cost_usd": 0.012}}}
+    state = {"token_usage": {"totals": {"calls": 3, "input_tokens": 1000, "output_tokens": 200, "cost_usd": 0.012, "cache_hit_rate": 0.0}}}
     cells = _token_usage_cells(state)
     assert cells["llm_calls"] == 3
     assert cells["cost_usd"] == "0.012000"

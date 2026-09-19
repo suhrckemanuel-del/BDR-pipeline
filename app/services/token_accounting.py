@@ -63,17 +63,34 @@ class UsageTracker(BaseCallbackHandler):
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
+        self.cache_read_tokens = 0
+        self.cache_creation_tokens = 0
         self.models: set[str] = set()
 
     # LangChain invokes this on the client's callbacks list after each LLM run.
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
         meta = getattr(response, "usage_metadata", None) or {}
         model = str(getattr(response, "model", "") or self.default_model or "unknown")
+        # Anthropic reports cache detail in output_token_details (B3); some
+        # versions surface it top-level — read both for robustness.
+        details = meta.get("output_token_details") or {}
+        cache_read = int(
+            details.get("cache_read", 0)
+            or meta.get("cache_read_input_tokens", 0)
+            or 0
+        )
+        cache_create = int(
+            details.get("cache_creation", 0)
+            or meta.get("cache_creation_input_tokens", 0)
+            or 0
+        )
         with self._lock:
             self.calls += 1
             self.models.add(model)
             self.input_tokens += int(meta.get("input_tokens", 0) or 0)
             self.output_tokens += int(meta.get("output_tokens", 0) or 0)
+            self.cache_read_tokens += cache_read
+            self.cache_creation_tokens += cache_create
 
     @property
     def model(self) -> str:
@@ -86,17 +103,28 @@ class UsageTracker(BaseCallbackHandler):
             calls = self.calls
             in_tok = self.input_tokens
             out_tok = self.output_tokens
+            cache_read = self.cache_read_tokens
+            cache_create = self.cache_creation_tokens
             models = sorted(self.models) or [self.default_model or "unknown"]
         model = models[0] if len(models) == 1 else "+".join(models)
         price = price_for(model.split("+")[0])
+        # Anthropic prompt-caching economics: cache reads cost 10% of the
+        # input price; cache WRITES cost a 25% premium (5-minute TTL).
+        cache_read_cost = cache_read / 1_000_000 * price["input"] * 0.1
+        cache_create_cost = cache_create / 1_000_000 * price["input"] * 1.25
+        uncached_in = max(0, in_tok - cache_read - cache_create)
+        uncached_cost = uncached_in / 1_000_000 * price["input"]
         return {
             "node": self.node,
             "model": model,
             "calls": calls,
             "input_tokens": in_tok,
             "output_tokens": out_tok,
+            "cache_read_tokens": cache_read,
+            "cache_creation_tokens": cache_create,
+            "cache_hit_rate": round(cache_read / in_tok, 4) if in_tok else 0.0,
             "cost_usd": round(
-                in_tok / 1_000_000 * price["input"]
+                uncached_cost + cache_read_cost + cache_create_cost
                 + out_tok / 1_000_000 * price["output"],
                 6,
             ),
@@ -108,7 +136,14 @@ class UsageTracker(BaseCallbackHandler):
 # ---------------------------------------------------------------------------
 
 def empty_usage() -> dict[str, Any]:
-    return {"sites": {}, "totals": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}}
+    return {
+        "sites": {},
+        "totals": {
+            "calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "cache_creation_tokens": 0,
+            "cache_hit_rate": 0.0, "cost_usd": 0.0,
+        },
+    }
 
 
 def merge_usage(prior: dict[str, Any] | None, *snapshots: dict[str, Any]) -> dict[str, Any]:
@@ -124,20 +159,28 @@ def merge_usage(prior: dict[str, Any] | None, *snapshots: dict[str, Any]) -> dic
         key = snap["node"]
         existing = sites.get(key) or {
             "model": snap["model"], "calls": 0, "input_tokens": 0,
-            "output_tokens": 0, "cost_usd": 0.0,
+            "output_tokens": 0, "cache_read_tokens": 0,
+            "cache_creation_tokens": 0, "cost_usd": 0.0,
         }
-        existing["calls"] += snap["calls"]
-        existing["input_tokens"] += snap["input_tokens"]
-        existing["output_tokens"] += snap["output_tokens"]
+        for field in (
+            "calls", "input_tokens", "output_tokens",
+            "cache_read_tokens", "cache_creation_tokens",
+        ):
+            existing[field] += snap.get(field, 0)
         existing["cost_usd"] = round(existing["cost_usd"] + snap["cost_usd"], 6)
         if snap["model"] not in existing["model"]:
             existing["model"] = "+".join(sorted({*existing["model"].split("+"), snap["model"]}))
         sites[key] = existing
 
+    total_in = sum(s["input_tokens"] for s in sites.values())
+    total_cache_read = sum(s.get("cache_read_tokens", 0) for s in sites.values())
     totals = {
         "calls": sum(s["calls"] for s in sites.values()),
-        "input_tokens": sum(s["input_tokens"] for s in sites.values()),
+        "input_tokens": total_in,
         "output_tokens": sum(s["output_tokens"] for s in sites.values()),
+        "cache_read_tokens": total_cache_read,
+        "cache_creation_tokens": sum(s.get("cache_creation_tokens", 0) for s in sites.values()),
+        "cache_hit_rate": round(total_cache_read / total_in, 4) if total_in else 0.0,
         "cost_usd": round(sum(s["cost_usd"] for s in sites.values()), 6),
     }
     return {"sites": sites, "totals": totals}
