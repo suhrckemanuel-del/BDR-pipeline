@@ -83,6 +83,14 @@ Sonnet-dominated strategist+humanizer+critic ≈ tens of thousands of input
 tokens and a few thousand output tokens → **cost per prospect in the
 $0.05–$0.20 band**. The measured number replaces this estimate.
 
+## Free-research arm (ticket #15)
+
+The free public-page prototype (`app/services/free_research.py`) costs **zero LLM calls**
+by construction — its only running costs are bandwidth and seconds. Benchmarked offline
+(real domains: 80% page coverage, ~2.4k chars/company, see `docs/free-research.md`); the
+quality reconciliation against the Exa arm (does free evidence hold the gate at parity?)
+is the live-guided step below.
+
 ## Notes for B1–B4
 
 - B1 (prompt strip) shows up as an `input_tokens` drop on the `strategist` ledger entry.

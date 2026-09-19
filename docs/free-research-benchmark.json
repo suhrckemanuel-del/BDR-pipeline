@@ -1,0 +1,12 @@
+{
+  "companies": 5,
+  "pages_attempted": 25,
+  "pages_fetched": 15,
+  "pages_blocked": 0,
+  "pages_failed": 10,
+  "coverage_pct": 60.0,
+  "evidence_chars": 9000,
+  "seconds": 16.78,
+  "llm_calls_free_arm": 0,
+  "q3_live_note": "Evidence-quality reconciliation vs the paid arm is the live, API-key-guided step (see docs/cost-baseline.md)."
+}

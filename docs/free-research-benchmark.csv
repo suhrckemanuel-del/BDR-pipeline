@@ -1,0 +1,6 @@
+company,domain,pages_fetched,pages_blocked,pages_failed,coverage,evidence_chars,seconds,llm_calls_free_arm,outcome
+Stripe,stripe.com,5,0,0,1.0,3000,2.35,0,ok
+Linear,linear.app,3,0,2,0.6,1800,2.6,0,ok
+Notion,notion.com,4,0,1,0.8,2400,2.16,0,ok
+Vercel,vercel.com,3,0,2,0.6,1800,1.13,0,ok
+Figma,figma.com,0,0,5,0.0,0,8.54,0,no_evidence
