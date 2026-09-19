@@ -513,7 +513,6 @@ def _default_live_runner(tenant: TenantConfig, prospect: dict[str, str]) -> dict
         tenant=tenant,
         sync_to_notion=False,
         trigger_headline=_prospect_context(prospect),
-        prospect_notes=prospect.get("notes", ""),
     )
 
 

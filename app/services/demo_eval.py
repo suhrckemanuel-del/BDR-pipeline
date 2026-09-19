@@ -158,7 +158,6 @@ def _default_live_runner(tenant: TenantConfig, prospect: dict[str, str]) -> dict
         tenant=tenant,
         sync_to_notion=False,
         trigger_headline=_prospect_context(prospect),
-        prospect_notes=prospect.get("notes", ""),
     )
 
 
@@ -358,7 +357,6 @@ def build_sample_state(tenant: TenantConfig, prospect: dict[str, str], index: in
         "industry": industry,
         "sync_to_notion": False,
         "trigger_headline": context,
-        "prospect_notes": prospect.get("notes", ""),
         "enrichment": enrichment,
         "strategy": strategy,
         "card": card,
@@ -534,7 +532,7 @@ def _prospect_industry_context(row: dict[str, str]) -> str:
 def _industry_context(state: dict) -> str:
     parts = [
         str(state.get("industry") or _get(state.get("enrichment"), "industry") or ""),
-        str(state.get("trigger_headline") or state.get("prospect_notes") or ""),
+        str(state.get("trigger_headline") or ""),
     ]
     return " | ".join(part for part in parts if part)
 

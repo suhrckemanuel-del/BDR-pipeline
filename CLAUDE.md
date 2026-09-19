@@ -222,7 +222,7 @@ Everything else is tested manually: Streamlit UI tested live, batch scripts run 
 python -m compileall app scripts
 python scripts/check_tenant.py
 python scripts/run_demo_eval.py
-python -c "from app.agents.workflow_engine import build_workflow; build_workflow(use_checkpointer=False)"
+python -c "from app.agents.workflow_engine import build_workflow; build_workflow()"
 ```
 
 ## Council Comparison Eval

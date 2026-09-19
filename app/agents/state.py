@@ -85,19 +85,6 @@ class AccountScoringResult(BaseModel):
     warnings: List[str] = []
 
 
-class TargetProfile(BaseModel):
-    """User-provided person context for hyper-personalized outreach."""
-    name: str = ""
-    title: str = ""
-    company: str = ""
-    linkedin_url: str = ""
-    notes: str = Field(
-        default="",
-        description="Profile headline/about/recent post notes supplied by the user.",
-    )
-    source: str = "manual_linkedin"
-
-
 class ICPClassification(BaseModel):
     """The Enrichment agent's ICP-tier judgement with composite 0-100 score."""
 
@@ -284,8 +271,6 @@ class BDRState(TypedDict, total=False):
     industry: str
     sync_to_notion: bool
     trigger_headline: str
-    prospect_notes: str
-    target_profile: TargetProfile
 
     # Agent outputs
     enrichment: EnrichmentResult

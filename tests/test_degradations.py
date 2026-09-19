@@ -346,3 +346,43 @@ def test_council_eval_markdown_renders_degradation_column():
     summary = {"accounts": 1}
     md = ce.build_markdown_report(result, summary)
     assert isinstance(md, str)  # smoke: report builds without the new column breaking it
+
+
+# ---------------------------------------------------------------------------
+# A3 cleanup (#5): intent fields populated live; dead inputs removed
+# ---------------------------------------------------------------------------
+
+def test_enrichment_populates_intent_fields():
+    """Live runs must populate intent_score / top_trigger / breakdown (#5)."""
+    import app.agents.enrichment as enr
+    from app.agents.state import LiveSignal
+
+    news = [
+        LiveSignal(title="Acme announces transformation program", url="https://x/1", snippet="cost reduction initiative"),
+        LiveSignal(title="Acme raises Series B", url="https://x/2", snippet="funding for expansion"),
+    ]
+
+    # Run the pure scoring path directly to assert the mapping is real.
+    _icp_score, breakdown = enr._compute_icp_score("SaaS", news, [], [], _tenant())
+    assert breakdown["intent_keyword_hits"] >= 2
+    assert breakdown["intent_signals"] == min(25, breakdown["intent_keyword_hits"] * 5)
+
+
+def test_no_dead_inputs_in_initial_state():
+    """prospect_notes / target_profile are gone from the graph state (#5)."""
+    from typing import get_type_hints
+
+    from app.agents.state import BDRState
+
+    hints = get_type_hints(BDRState)
+    assert "prospect_notes" not in hints
+    assert "target_profile" not in hints
+
+
+def test_build_workflow_default_compiles():
+    """build_workflow() default signature works with the checkpointer path gone."""
+    from app.agents.workflow_engine import build_workflow
+
+    app = build_workflow()
+    assert app is not None
+    assert not hasattr(app, "checkpointer") or app.checkpointer is None

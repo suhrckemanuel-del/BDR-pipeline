@@ -251,10 +251,12 @@ def _compute_icp_score(
         "hiring", "series", "raised", "acquisition", "merger", "earnings",
         "layoff", "expansion", "ipo",
     ]
-    intent_score = min(25, sum(5 for k in intent_keywords if k in combined_text))
+    intent_hits = [k for k in intent_keywords if k in combined_text]
+    intent_score = min(25, len(intent_hits) * 5)
     if job_signals:
         intent_score = min(25, intent_score + len(job_signals) * 4)
     breakdown["intent_signals"] = intent_score
+    breakdown["intent_keyword_hits"] = len(intent_hits)
     score += intent_score
 
     # --- Contact quality (15 pts): persona-title matches ---
@@ -1008,6 +1010,13 @@ def run_enrichment(state: BDRState) -> dict:
         account_score=account_score,
         research_summary=summary,
         icp=icp,
+        intent_score=score_breakdown.get("intent_signals", 0),
+        intent_top_trigger=trigger_headline[:200],
+        intent_breakdown={
+            "keyword_hits": score_breakdown.get("intent_keyword_hits", 0),
+            "job_signals": len(job_signals),
+            "composite_intent_signals": score_breakdown.get("intent_signals", 0),
+        },
     )
     return {
         "enrichment": enrichment,

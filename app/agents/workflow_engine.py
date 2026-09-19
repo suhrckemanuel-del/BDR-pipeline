@@ -11,7 +11,6 @@ Tenant config is set once on the initial state and threaded through every node.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Generator, Tuple
 
 from langgraph.graph import END, StateGraph
@@ -26,11 +25,14 @@ from app.tenants.schema import TenantConfig
 
 NODE_ORDER = ("enrichment", "strategist", "humanizer", "critic", "crm_sync")
 
-_DB_PATH = Path(__file__).resolve().parents[2] / "pipeline" / "checkpoints.db"
 
+def build_workflow(use_checkpointer: bool = False):
+    """Compile and return the LangGraph workflow.
 
-def build_workflow(use_checkpointer: bool = True):
-    """Compile and return the LangGraph workflow with optional SqliteSaver."""
+    Kept as a no-arg call site everywhere; the former SqliteSaver path was
+    removed (A3 cleanup) — runs are short-lived and never resumed, so durable
+    persistence lives in the run store, not a LangGraph checkpointer.
+    """
     graph = StateGraph(BDRState)
 
     graph.add_node("enrichment", run_enrichment)
@@ -46,16 +48,7 @@ def build_workflow(use_checkpointer: bool = True):
     graph.add_edge("critic", "crm_sync")
     graph.add_edge("crm_sync", END)
 
-    checkpointer = None
-    if use_checkpointer:
-        try:
-            from langgraph.checkpoint.sqlite import SqliteSaver  # type: ignore
-            _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-            checkpointer = SqliteSaver.from_conn_string(str(_DB_PATH))
-        except Exception:
-            pass
-
-    return graph.compile(checkpointer=checkpointer)
+    return graph.compile()
 
 
 def _build_initial_state(
@@ -64,7 +57,6 @@ def _build_initial_state(
     tenant: TenantConfig,
     sync_to_notion: bool,
     trigger_headline: str = "",
-    prospect_notes: str = "",
 ) -> BDRState:
     return {
         "tenant": tenant,
@@ -72,9 +64,9 @@ def _build_initial_state(
         "industry": industry.strip(),
         "sync_to_notion": bool(sync_to_notion),
         "trigger_headline": trigger_headline.strip(),
-        "prospect_notes": prospect_notes.strip(),
         "agent_trace": [],
         "critic_retries": 0,
+        "degradations": [],
     }
 
 
@@ -85,26 +77,15 @@ def run_workflow_stream(
     tenant: TenantConfig,
     sync_to_notion: bool = False,
     trigger_headline: str = "",
-    prospect_notes: str = "",
-    thread_id: str | None = None,
 ) -> Generator[Tuple[str, dict], None, None]:
     """
     Stream node-by-node updates. Yields (latest_trace_line, full_state).
-    thread_id is used as the checkpoint key (defaults to tenant_id + company slug).
     """
-    import re as _re
-    company_slug = _re.sub(r"[^a-z0-9]+", "_", company.lower()).strip("_")
-    slug = thread_id or f"{tenant.tenant_id}_{company_slug}"
-
     initial = _build_initial_state(
-        company, industry, tenant, sync_to_notion, trigger_headline, prospect_notes
+        company, industry, tenant, sync_to_notion, trigger_headline
     )
 
-    config: dict = {}
-    if app.checkpointer:
-        config = {"configurable": {"thread_id": slug}}
-
-    for event in app.stream(initial, config=config, stream_mode="values"):
+    for event in app.stream(initial, stream_mode="values"):
         trace = event.get("agent_trace", [])
         latest = trace[-1] if trace else "init"
         yield latest, event
@@ -117,10 +98,9 @@ def run_workflow(
     tenant: TenantConfig,
     sync_to_notion: bool = False,
     trigger_headline: str = "",
-    prospect_notes: str = "",
 ) -> dict:
     """Synchronous variant — returns the final state dict."""
     initial = _build_initial_state(
-        company, industry, tenant, sync_to_notion, trigger_headline, prospect_notes
+        company, industry, tenant, sync_to_notion, trigger_headline
     )
     return app.invoke(initial)
