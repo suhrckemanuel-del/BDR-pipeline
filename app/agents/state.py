@@ -302,3 +302,8 @@ class BDRState(TypedDict, total=False):
     # Run state
     error: Optional[str]
     agent_trace: List[str]
+    # Structured notes about degraded sources (missing API keys, failed fetches,
+    # LLM fallbacks). Empty means every source returned normally. Nodes follow a
+    # read-modify-write convention: seed from prior state, append, return the
+    # full list — the default last-value channel replaces otherwise.
+    degradations: List[str]

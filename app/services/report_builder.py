@@ -127,6 +127,13 @@ def build_account_report_markdown(state: dict, tenant: TenantConfig) -> str:
     lines.extend(["", "### Risk Flags"])
     lines.extend(_format_risk_flags(risk_flags))
 
+    degradations = [str(d) for d in (state.get("degradations") or []) if str(d).strip()]
+    lines.extend(["", "## Degraded Sources"])
+    if degradations:
+        lines.extend(f"- {item}" for item in degradations)
+    else:
+        lines.append("- All sources operated at full capability — no degradations recorded.")
+
     lines.extend([
         "",
         "## Human Approval Checklist",

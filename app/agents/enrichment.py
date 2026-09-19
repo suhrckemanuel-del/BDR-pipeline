@@ -59,14 +59,19 @@ def _build_jobs_query(company: str, tenant: TenantConfig) -> str:
 # ---------------------------------------------------------------------------
 # Exa — generic web fetch
 # ---------------------------------------------------------------------------
-def _fetch_exa(query: str, num_results: int = 5) -> List[LiveSignal]:
+def _fetch_exa(query: str, num_results: int = 5) -> tuple[List[LiveSignal], List[str]]:
+    """Fetch Exa signals. Returns (signals, degradations) — degradations explain
+    every silent fallback (missing key, missing package, API failure)."""
+    degradations: List[str] = []
     api_key = os.environ.get("EXA_API_KEY", "")
     if not api_key:
-        return []
+        degradations.append("Exa: EXA_API_KEY missing — no live signals fetched")
+        return [], degradations
     try:
         from exa_py import Exa  # type: ignore
     except ImportError:
-        return []
+        degradations.append("Exa: exa_py package not installed — no live signals fetched")
+        return [], degradations
     try:
         exa = Exa(api_key=api_key)
         results = exa.search_and_contents(
@@ -74,12 +79,14 @@ def _fetch_exa(query: str, num_results: int = 5) -> List[LiveSignal]:
             num_results=num_results,
             text={"max_characters": 600},
         )
-    except Exception:
+    except Exception as exc:
+        degradations.append(f"Exa: contents search failed ({exc.__class__.__name__}) — retried without contents")
         try:
             exa = Exa(api_key=api_key)
             results = exa.search(query, num_results=num_results)
-        except Exception:
-            return []
+        except Exception as exc2:
+            degradations.append(f"Exa: search failed ({exc2.__class__.__name__}) — returning no signals for this query")
+            return [], degradations
 
     signals: List[LiveSignal] = []
     for r in (results.results or [])[:num_results]:
@@ -88,17 +95,19 @@ def _fetch_exa(query: str, num_results: int = 5) -> List[LiveSignal]:
         snippet = (getattr(r, "text", "") or "").strip()
         if title or snippet:
             signals.append(LiveSignal(title=title, url=url, snippet=snippet[:600]))
-    return signals
+    return signals, degradations
 
 
-async def _async_fetch_exa(query: str, num_results: int) -> List[LiveSignal]:
+async def _async_fetch_exa(
+    query: str, num_results: int
+) -> tuple[List[LiveSignal], List[str]]:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _fetch_exa, query, num_results)
 
 
 async def _async_fetch_hunter(
     company: str, tenant: TenantConfig
-) -> tuple[str, List[ContactLead]]:
+) -> tuple[str, List[ContactLead], List[str]]:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _fetch_hunter_contacts, company, tenant)
 
@@ -120,11 +129,13 @@ def _persona_keywords(tenant: TenantConfig) -> tuple[str, ...]:
 
 def _fetch_hunter_contacts(
     company: str, tenant: TenantConfig, limit: int = 10
-) -> tuple[str, List[ContactLead]]:
-    """Returns (resolved_domain, persona-prioritized contacts)."""
+) -> tuple[str, List[ContactLead], List[str]]:
+    """Returns (resolved_domain, persona-prioritized contacts, degradations)."""
+    degradations: List[str] = []
     api_key = os.environ.get("HUNTER_API_KEY", "")
     if not api_key:
-        return "", []
+        degradations.append("Hunter: HUNTER_API_KEY missing — no contacts fetched")
+        return "", [], degradations
 
     seniority_filter = ",".join(tenant.persona.seniority_filter) or "senior,executive"
 
@@ -139,11 +150,13 @@ def _fetch_hunter_contacts(
             },
             timeout=15,
         )
-    except requests.RequestException:
-        return "", []
+    except requests.RequestException as exc:
+        degradations.append(f"Hunter: request failed ({exc.__class__.__name__}) — no contacts fetched")
+        return "", [], degradations
 
     if resp.status_code != 200:
-        return "", []
+        degradations.append(f"Hunter: HTTP {resp.status_code} — no contacts fetched")
+        return "", [], degradations
 
     data = (resp.json() or {}).get("data") or {}
     domain = (data.get("domain") or "").strip()
@@ -172,9 +185,9 @@ def _fetch_hunter_contacts(
             persona_hits.append(lead)
 
     if persona_hits:
-        return domain, persona_hits[:5]
+        return domain, persona_hits[:5], degradations
     contacts.sort(key=lambda c: c.confidence, reverse=True)
-    return domain, contacts[:5]
+    return domain, contacts[:5], degradations
 
 
 # ---------------------------------------------------------------------------
@@ -731,11 +744,14 @@ def _classify_icp(
     score: int,
     score_breakdown: dict,
     tenant: TenantConfig,
+    degradations: List[str] | None = None,
 ) -> ICPClassification:
+    degradations = degradations if degradations is not None else []
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     tier, tier_label = _tier_from_score(score, tenant)
 
     if not api_key:
+        degradations.append("LLM: ANTHROPIC_API_KEY missing — ICP tier derived from composite score only")
         return ICPClassification(
             tier=tier,
             tier_label=f"{tier_label} (no API key)",
@@ -778,7 +794,8 @@ def _classify_icp(
             result.tier = tier
         if not result.tier_label:
             result.tier_label = tier_label
-    except Exception:
+    except Exception as exc:
+        degradations.append(f"LLM: ICP classification call failed ({exc.__class__.__name__}) — tier derived from composite score")
         result = ICPClassification(
             tier=tier,
             tier_label=tier_label,
@@ -813,9 +830,12 @@ def _summarise(
     job_signals: List[LiveSignal],
     contacts: List[ContactLead],
     tenant: TenantConfig,
+    degradations: List[str] | None = None,
 ) -> str:
+    degradations = degradations if degradations is not None else []
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
+        degradations.append("LLM: ANTHROPIC_API_KEY missing — research summary unavailable")
         return "ANTHROPIC_API_KEY missing — no LLM summary available."
 
     sig_block = "\n\n".join(
@@ -855,6 +875,7 @@ def _summarise(
     try:
         resp = llm.invoke([system_msg, HumanMessage(content=user)])
     except Exception as exc:
+        degradations.append(f"LLM: research summary call failed ({exc.__class__.__name__}) — summary unavailable")
         return f"(summary failed: {exc})"
     content = resp.content
     if isinstance(content, str):
@@ -873,7 +894,7 @@ async def _run_enrichment_async(company: str, tenant: TenantConfig) -> dict:
     jobs_task = _async_fetch_exa(jobs_q, 3)
     hunter_task = _async_fetch_hunter(company, tenant)
 
-    signals, job_signals, (domain, contacts) = await asyncio.gather(
+    (signals, news_degs), (job_signals, jobs_degs), (domain, contacts, hunter_degs) = await asyncio.gather(
         news_task, jobs_task, hunter_task
     )
     return {
@@ -881,6 +902,7 @@ async def _run_enrichment_async(company: str, tenant: TenantConfig) -> dict:
         "job_signals": job_signals,
         "domain": domain,
         "contacts": contacts,
+        "degradations": [*news_degs, *jobs_degs, *hunter_degs],
     }
 
 
@@ -899,21 +921,30 @@ def run_enrichment(state: BDRState) -> dict:
 
     trace.append("Enrichment: fetching Exa signals + Hunter.io contacts in parallel")
 
+    degradations: List[str] = list(state.get("degradations", []))
+
     try:
         loop = asyncio.new_event_loop()
         io_result = loop.run_until_complete(_run_enrichment_async(company, tenant))
         loop.close()
     except Exception as exc:
         trace.append(f"Enrichment: parallel fetch failed ({exc}), falling back to sequential")
-        signals = _fetch_exa(_build_news_query(company, tenant))
+        signals, news_degs = _fetch_exa(_build_news_query(company, tenant))
         job_signals: List[LiveSignal] = []
-        domain, contacts = _fetch_hunter_contacts(company, tenant)
-        io_result = {"signals": signals, "job_signals": job_signals, "domain": domain, "contacts": contacts}
+        domain, contacts, hunter_degs = _fetch_hunter_contacts(company, tenant)
+        io_result = {
+            "signals": signals,
+            "job_signals": job_signals,
+            "domain": domain,
+            "contacts": contacts,
+            "degradations": [*news_degs, *hunter_degs],
+        }
 
     signals = io_result["signals"]
     job_signals = io_result["job_signals"]
     domain = io_result["domain"]
     contacts = io_result["contacts"]
+    degradations.extend(io_result.get("degradations", []))
 
     trace.append(
         f"Enrichment: {len(signals)} news signals · {len(job_signals)} job signals · "
@@ -931,10 +962,10 @@ def run_enrichment(state: BDRState) -> dict:
     )
 
     trace.append("Enrichment: synthesising research summary (Haiku)")
-    summary = _summarise(company, industry, signals, job_signals, contacts, tenant)
+    summary = _summarise(company, industry, signals, job_signals, contacts, tenant, degradations)
 
     trace.append("Enrichment: classifying ICP tier (Haiku)")
-    icp = _classify_icp(company, industry, summary, icp_score, score_breakdown, tenant)
+    icp = _classify_icp(company, industry, summary, icp_score, score_breakdown, tenant, degradations)
     trace.append(f"Enrichment: {icp.tier_label} · score {icp_score}/100")
 
     evidence_cards = _build_evidence_cards(
@@ -981,5 +1012,6 @@ def run_enrichment(state: BDRState) -> dict:
     return {
         "enrichment": enrichment,
         "trigger_headline": trigger_headline,
+        "degradations": degradations,
         "agent_trace": trace,
     }

@@ -394,6 +394,7 @@ CSV_FIELDS = [
     "agreement_level",
     "scorer_spread",
     "disagreements",
+    "degradations",
 ]
 
 
@@ -482,6 +483,7 @@ def build_comparison_row(
     row.update(comparison)
     row["scorer_spread"] = council_metrics.get("scorer_spread", 0.0)
     row["disagreements"] = council_metrics.get("disagreements", [])
+    row["degradations"] = list(single_state.get("degradations") or [])
     row["runtime_seconds"] = f"{runtime_seconds:.2f}"
     return row
 

@@ -259,6 +259,14 @@ def render_main(tenant: TenantConfig, state: dict) -> None:
 
     C.header_block(company, industry=industry, tier_label=tier_label)
 
+    # Degradation banner — surfaces every source that silently fell back
+    degradations = [str(d) for d in (state.get("degradations") or []) if str(d).strip()]
+    if degradations:
+        st.warning(
+            "**Some sources ran degraded** — results may be less complete than usual:\n\n"
+            + "\n\n".join(f"- {d}" for d in degradations)
+        )
+
     # All stages completed
     done = tuple(k for k, _ in C.STAGE_LABELS)
     C.stage_nav(active_key="", done_keys=done)
