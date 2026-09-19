@@ -71,25 +71,41 @@ construction on every `ChatAnthropic(...)`; it rides through
 `with_structured_output` wrappers, thread pools, and retries. Zero-LLM runs
 (no API key) merge nothing — the pipeline behaves byte-identically to pre-B0.
 
-## Baseline numbers**To be filled from the first live run** (deliberately not fabricated: the plan's
+## Baseline numbers — MEASURED 2026-09-20 (live, 3 demo prospects per arm)
 
-decree is measurement, not estimation). The maintainer's single "press start"
-step for this session is the `run_demo_eval.py --live` command above; paste the
-resulting `Cost per Prospect` section here and the baseline is sealed.
+First live baseline (and A/B) complete. Artifacts: `docs/evals/after-optimized.*`
+and `docs/evals/before-baseline.*` (CSV/JSON/MD per arm). Both arms ran on the
+same code (post-B1/B2/B3) with the critic profile as the only difference — the
+true pre-optimization code no longer exists on main, so this A/B isolates **B4
+(cascade) only**.
 
-**Since 2026-09-19 the demo tenant runs the OPTIMIZED profile** (B4 cascade on,
-cheap-tier first rater, B3 caching active on every call — see
-`tenants/demo/config.yaml`). That makes the first live run measure the optimized
-pipeline, as intended. The #14 exit check (≥50% at equal quality) then needs the
-matching *before* arm: run the same eval a second time with `cascade_enabled: false`
-and the original Sonnet-first council order (one-line tenant change or a copy of
-the tenant folder), and compare the two runs' `cost_usd` / `llm_calls` columns —
-same fixtures, same session, clean A/B.
+| Arm | Calls/prospect | Cost/prospect | Gate verdicts |
+| --- | --- | --- | --- |
+| **Optimized** (cascade on, Haiku first rater) | 10 | **$0.0754** | do_not_send_yet ×3 |
+| **Before** (full council, Sonnet-first) | 10 | **$0.0705** | needs_edit, do_not_send_yet ×2 |
+| Totals (3 prospects each) | 30 | $0.2263 vs $0.2115 | |
 
-Expected shape (per prospect, rough order of magnitude for sanity only):
-Sonnet-dominated strategist+humanizer+critic ≈ tens of thousands of input
-tokens and a few thousand output tokens → **cost per prospect in the
-$0.05–$0.20 band**. The measured number replaces this estimate.
+**Honest verdict for #14: the ≥50% exit criterion is NOT met by this measurement.**
+
+Why, from the data:
+- **Every prospect escalated** in both arms (10 calls each): the fixtures are
+  borderline-by-design (synthetic, thin evidence), so the cascade never hits its
+  saving case (a clean pass = 1 call). On escalating workloads the cascade is
+  cost-neutral by construction — it buys *scrutiny*, not savings.
+- **The dominant cost driver is ~11k OUTPUT tokens per prospect at Sonnet
+  prices** — the craft-heavy humanizer/rewriter path, not the critic call count.
+- Cache hit-rate was ~0 on these runs: each prospect is a fresh conversation
+  (no shared prefix across prospects), so B3 savings are per-run prefix reuse
+  only (retries/rewrites within one prospect).
+
+**What the real lever is:** cutting output tokens on the craft path (tighter
+humanizer prompts, cheaper writer tier where quality holds — the B2 route map
+already supports per-node tier changes with zero code). That is the follow-up
+work #14's target should attach to.
+
+Quality leg: verdicts are not comparable at n=3 (one verdict differed between
+arms; model nondeterminism on borderline fixtures). No quality claim is made
+in either direction.
 
 ## Free-research arm (ticket #15)
 

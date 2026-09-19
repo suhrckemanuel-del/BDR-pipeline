@@ -1,0 +1,4 @@
+account,industry_context,run_completed,runtime_seconds,evidence_card_count,high_confidence_evidence_count,contact_count,account_score,priority_label,quality_gate_verdict,risk_flag_count,unsupported_claim_count,llm_calls,input_tokens,output_tokens,cost_usd,cache_hit_rate,report_generated,notes_errors
+Globex Industries,B2B SaaS | Series D revenue intelligence customer; 120 AEs across 3 segments,yes,157.97,5,3,3,46,needs_more_research,do_not_send_yet,9,3,10,13655,11159,0.086913,0.0000,yes,
+Initech,B2B SaaS | Series C; recent CRO hire focused on forecast accuracy,yes,147.64,2,0,0,22,do_not_send_yet,do_not_send_yet,10,7,10,11886,11001,0.069383,0.5236,yes,
+Hooli,B2B SaaS | Late-stage; multi-product motion (PLG + sales-led),yes,144.93,2,0,0,22,do_not_send_yet,do_not_send_yet,9,4,10,11905,10887,0.070018,0.5228,yes,
