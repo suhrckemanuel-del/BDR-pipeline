@@ -60,6 +60,31 @@ The UI opens at `http://localhost:8501`. Sidebar dropdown selects the tenant; de
 
 To pin a tenant: `BDR_TENANT=demo streamlit run app/main.py`.
 
+### Agent-facing CLI (terminal agents — no UI needed)
+
+Claude Code and other terminal agents drive the pipeline through `python -m app.cli`.
+Exit codes: **0** success, **1** operation failed, **2** environment/usage problem
+(e.g. missing `ANTHROPIC_API_KEY`). With `--json`, stdout carries exactly one JSON
+document (human progress lines go to stderr) — safe to parse.
+
+```bash
+.venv/Scripts/python.exe -m app.cli check                    # validate all tenants (no keys needed)
+.venv/Scripts/python.exe -m app.cli check --tenant demo --json
+
+.venv/Scripts/python.exe -m app.cli run --company "Acme Corp" --industry "B2B SaaS" --tenant demo
+.venv/Scripts/python.exe -m app.cli run --company "Acme Corp" --json > run.json   # full state as JSON
+
+.venv/Scripts/python.exe -m app.cli runs --limit 5           # recent runs
+.venv/Scripts/python.exe -m app.cli runs --queue             # review queue
+.venv/Scripts/python.exe -m app.cli approve <RUN_ID>         # approve a queued run
+.venv/Scripts/python.exe -m app.cli report <RUN_ID> --out reports/acme.md
+```
+
+`run` persists through the same RunStore as the dashboard, so CLI runs appear in
+the sidebar's Recent runs / review queue. Offline work (tests, eval harness,
+free-research benchmark) needs no API key; a live `run` requires
+`ANTHROPIC_API_KEY` in `.env` (Exa/Hunter optional — missing ones degrade loudly).
+
 ---
 
 ## Project Structure
