@@ -425,10 +425,10 @@ def _build_critic_system(tenant: TenantConfig) -> str:
         "    specific and ends with a genuine question.\n"
         "  - Break-up emails should score high on human_voice if they are direct,\n"
         "    respectful, and offer a free resource with no hard pitch.\n\n"
-        "For each touch produce: touch_number, four dim scores (1–5), per-dim\n"
-        "critique strings (or empty if score >= 3), and a one-sentence feedback.\n\n"
-        "Also produce overall_quality (mean of all touch averages) and a 1–2 sentence\n"
-        "critique_summary."
+        "Score EVERY touch supplied in the user message, in order. The structured-\n"
+        "output schema defines the exact fields to return — fill every required\n"
+        "field (touch_scores list, overall_quality, critique_summary); do not add\n"
+        "prose, JSON, or commentary outside it.\n"
     )
 
 
@@ -455,7 +455,8 @@ def _build_quality_gate_system(tenant: TenantConfig) -> str:
         "  - The sequence you review is the FINAL rewritten version. Judge it as-is.\n"
         "  - Do not claim the gate guarantees deliverability, reply quality, or safety for auto-send.\n"
         "  - Human review is still required before sending.\n\n"
-        "Return a QualityGate. Keep the summary and fixes concise, specific, and founder-friendly."
+        "Fill the structured-output schema exactly as defined; keep the summary and\n"
+        "fixes concise, specific, and founder-friendly."
     )
 
 

@@ -69,26 +69,52 @@ class UsageTracker(BaseCallbackHandler):
 
     # LangChain invokes this on the client's callbacks list after each LLM run.
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
-        meta = getattr(response, "usage_metadata", None) or {}
-        model = str(getattr(response, "model", "") or self.default_model or "unknown")
-        # Anthropic reports cache detail in output_token_details (B3); some
-        # versions surface it top-level — read both for robustness.
+        # On the pinned langchain-anthropic the event carries an LLMResult whose
+        # llm_output["usage"] holds Anthropic-native counts (plus the model
+        # name). Some versions/tests instead carry usage_metadata on the
+        # AIMessage inside .generations — read both. (Reading usage_metadata
+        # off the LLMResult itself silently yielded zeros; caught by the
+        # first live baseline run.)
+        llm_output = getattr(response, "llm_output", None) or {}
+        usage = llm_output.get("usage") or {}
+        message = None
+        generations = getattr(response, "generations", None)
+        if generations:
+            first = generations[0]
+            gen = first[0] if isinstance(first, list) else first
+            # ChatGeneration wraps the AIMessage; unwrap when present.
+            message = getattr(gen, "message", None) or gen
+        elif not usage:
+            # Direct AIMessage-like payloads (some call sites and tests pass
+            # the message itself, with usage_metadata top-level).
+            message = response
+        meta = getattr(message, "usage_metadata", None) or {}
         details = meta.get("output_token_details") or {}
+        model = str(
+            llm_output.get("model")
+            or getattr(message, "model", "")
+            or self.default_model
+            or "unknown"
+        )
+        input_tokens = int(usage.get("input_tokens") or meta.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or meta.get("output_tokens") or 0)
         cache_read = int(
-            details.get("cache_read", 0)
-            or meta.get("cache_read_input_tokens", 0)
+            usage.get("cache_read_input_tokens")
+            or details.get("cache_read")
+            or meta.get("cache_read_input_tokens")
             or 0
         )
         cache_create = int(
-            details.get("cache_creation", 0)
-            or meta.get("cache_creation_input_tokens", 0)
+            usage.get("cache_creation_input_tokens")
+            or details.get("cache_creation")
+            or meta.get("cache_creation_input_tokens")
             or 0
         )
         with self._lock:
             self.calls += 1
             self.models.add(model)
-            self.input_tokens += int(meta.get("input_tokens", 0) or 0)
-            self.output_tokens += int(meta.get("output_tokens", 0) or 0)
+            self.input_tokens += input_tokens
+            self.output_tokens += output_tokens
             self.cache_read_tokens += cache_read
             self.cache_creation_tokens += cache_create
 

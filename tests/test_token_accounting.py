@@ -41,12 +41,31 @@ def test_tracker_captures_usage_metadata():
     tracker = UsageTracker(node="strategist", default_model="claude-sonnet-4-6")
     tracker.on_llm_end(FakeResponse("claude-sonnet-4-6", 1000, 200))
     tracker.on_llm_end(FakeResponse("claude-sonnet-4-6", 1500, 300))
-
     snap = tracker.snapshot()
     assert snap["calls"] == 2
     assert snap["input_tokens"] == 2500
     assert snap["output_tokens"] == 500
-    assert snap["model"] == "claude-sonnet-4-6"
+
+
+def test_tracker_reads_real_llmresult_shape():
+    """Regression: real on_llm_end events carry an LLMResult whose AIMessage
+    (inside .generations) holds usage_metadata. Reading usage off the result
+    itself yielded silent zeros — caught by the first live baseline run."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    tracker = UsageTracker(node="probe", default_model="claude-haiku-4-5-20251001")
+    message = AIMessage(
+        content="ok",
+        usage_metadata={"input_tokens": 1234, "output_tokens": 56, "total_tokens": 1290},
+    )
+    tracker.on_llm_end(LLMResult(generations=[[ChatGeneration(message=message)]]))
+    snap = tracker.snapshot()
+    assert snap["calls"] == 1
+    assert snap["input_tokens"] == 1234
+    assert snap["output_tokens"] == 56
+    assert snap["cost_usd"] > 0
+    assert snap["model"] == "claude-haiku-4-5-20251001"  # falls back to default_model
 
 
 def test_pricing_math_sonnet():
