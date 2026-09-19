@@ -1,0 +1,3 @@
+# Dev/test dependencies. CI installs this file (which includes requirements.txt).
+-r requirements.txt
+pytest==9.1.1
