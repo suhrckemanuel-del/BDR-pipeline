@@ -12,6 +12,22 @@ The repo ships with one example tenant: **`demo/`** (Acme Analytics, a fictional
 
 ---
 
+## Agent Skills
+
+### Issue tracker
+
+GitHub Issues in this repo, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
+
+---
+
 ## Tech Stack
 
 - **Python 3.x**
@@ -228,6 +244,19 @@ average quality deltas, and per-account disagreement rates (council arm only).
 Internal workflow metrics only — no campaign-performance claims.
 
 ---
+
+## Workflow Loop (adopted)
+
+Work follows the `.claude/skills/` engineering loop:
+
+1. **Grill, then spec** — clarify intent before building (`grill-me`, `to-spec`, `to-tickets`). Publish tickets as GitHub issues; label `ready-for-agent` only when fully specified.
+2. **One ticket, one branch** — short-lived branches per ticket, not direct-to-main.
+3. **TDD** — red-green-refactor for behavior changes (`tdd`); every bug fix lands with a regression test.
+4. **Review before merge** — two-axis diff review (repo standards + spec fidelity) via `code-review`, then PR and close the issue.
+5. **Triage inbox** — new work enters as issues labelled `needs-triage`; nothing starts unlabelled.
+6. **Docs stay live** — when a term or decision changes, update `CONTEXT.md` or add an ADR (`domain-modeling`) in the same change.
+
+In this Codebuff thread, Buffy applies the same discipline by reading the SKILL.md files directly; slash-command invocation is Claude Code-only.
 
 ## Roadmap
 
