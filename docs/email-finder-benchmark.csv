@@ -1,0 +1,6 @@
+company,domain,free_emails_found,free_best_conf,free_best_email,free_named,free_conventions,free_pages_fetched,free_seconds,hunter_contacts,hunter_best_conf,hunter_best_email,outcome
+Stripe,stripe.com,0,0,,0,,4,5.71,5,85,vinay@stripe.com,free_miss
+Notion,notion.com,0,0,,0,,2,5.06,5,99,matthew@notion.online,free_miss
+Linear,linear.app,1,73,hello@linear.app,1,,7,1.59,2,82,cristina@linear.app,free_hit=True
+Vercel,vercel.com,0,0,,0,,3,2.3,5,85,grace.roehl@vercel.com,free_miss
+Figma,figma.com,0,0,,0,,0,14.34,1,99,therb@figma.com,free_miss

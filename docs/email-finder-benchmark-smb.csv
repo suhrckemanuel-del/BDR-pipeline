@@ -1,0 +1,6 @@
+company,domain,free_emails_found,free_best_conf,free_best_email,free_named,free_conventions,free_pages_fetched,free_seconds,hunter_contacts,hunter_best_conf,hunter_best_email,outcome
+37signals,37signals.com,1,95,jason@basecamp.com,1,plain,5,2.91,2,98,scott@37signals.com,free_hit=True
+Buffer,buffer.com,0,0,,0,,1,4.58,1,99,jenny@buffer.com,free_miss
+Ghost,ghost.org,1,58,support@ghost.org,1,,3,2.84,1,85,hannah@ghost.org,free_hit=True
+Plausible,plausible.io,1,73,hello@plausible.io,1,,4,1.31,0,0,,free_hit=True
+Fathom,fathomanalytics.com,0,0,,0,,8,1.2,4,99,chelsea.shane@fathom.video,free_miss

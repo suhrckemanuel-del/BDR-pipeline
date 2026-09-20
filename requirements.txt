@@ -13,6 +13,10 @@ exa-py==2.12.1
 requests==2.33.1
 notion-client==3.0.0
 
+# Email finder (C1): guarded-import MX verification — the free path works
+# without it (confidence model treats MX as unknown), but install for live runs.
+dnspython==2.8.0
+
 # UI + data
 streamlit==1.56.0
 pandas==3.0.2
